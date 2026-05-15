@@ -25,7 +25,7 @@
  *                            but the page itself can load and explain this.
  */
 
-import { auth, currentUser } from '@clerk/nextjs/server';
+import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Sidebar from './Sidebar';
 
@@ -140,17 +140,13 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { userId } = await auth();
+  const { userId, sessionClaims } = await auth();
 
   // Middleware should have blocked unauthenticated access, but guard here
   // defensively in case the middleware config ever changes.
   if (!userId) {
     redirect('/sign-in');
   }
-
-  // Fetch user display info from Clerk (first/last name, email fallback).
-  // currentUser() is a separate Clerk API call — keep it outside the DB try/catch.
-  const clerkUser = await currentUser();
 
   // Default unlock state: only Module 1 is open. Used when the DB is
   // unavailable (e.g., DATABASE_URL not configured in a fresh dev environment).
@@ -180,12 +176,11 @@ export default async function DashboardLayout({
     // set above. The Sidebar will show accurate lock state once DB is up.
   }
 
-  // Derive user's display initials for the Sidebar avatar.
-  // Prefer first + last initial; fall back to first letter of primary email.
+  // Derive user display info from session claims — no extra Clerk API call needed.
   const userEmail =
-    clerkUser?.emailAddresses?.[0]?.emailAddress ?? 'u@example.com';
-  const firstName = clerkUser?.firstName ?? '';
-  const lastName = clerkUser?.lastName ?? '';
+    (sessionClaims?.email as string | undefined) ?? `${userId.slice(0, 6)}@clerk`;
+  const firstName = (sessionClaims?.first_name as string | undefined) ?? '';
+  const lastName = (sessionClaims?.last_name as string | undefined) ?? '';
   const userInitials =
     firstName && lastName
       ? `${firstName[0]}${lastName[0]}`.toUpperCase()
