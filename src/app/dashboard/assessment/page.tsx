@@ -158,6 +158,20 @@ export default async function AssessmentPage() {
             </div>
           )}
 
+          {totalAnswered > 0 && (
+            <div className="mb-6 max-w-2xl rounded-xl border border-teal-400/20 bg-teal-400/5 p-4 flex items-center justify-between gap-4">
+              <p className="text-xs text-slate-400">
+                Ready to see your risk scores? The Scoring Dashboard calculates weighted results from your answers.
+              </p>
+              <Link
+                href="/dashboard/scoring"
+                className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-teal-400/30 bg-teal-400/10 px-3 py-1.5 text-xs font-medium text-teal-400 hover:bg-teal-400/20 transition-colors"
+              >
+                View Scores <ChevronRight size={12} />
+              </Link>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-3 max-w-4xl sm:grid-cols-2">
             {AUDIT_COMPONENTS.map(component => {
               const status = statusMap.get(component.number);

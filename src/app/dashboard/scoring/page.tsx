@@ -1,377 +1,379 @@
 /**
  * Module 3: Scoring Dashboard — /dashboard/scoring
+ * Displays risk-weighted composite scores for all 18 §7123(c) components.
+ * Scores are computed by POST /api/scoring/calculate and cached in component_scores.
  *
- * Server component. Displays risk-weighted composite scores for each of the
- * 18 §7123(c) cybersecurity components using a traffic-light system.
- *
- * Scoring algorithm (cached in component_scores table):
- * - Yes = 100 pts | Partial = 50 pts | No = 0 pts | N/A = excluded from denominator
- * - Risk weight multipliers: Critical = 4×, High = 3×, Medium = 2×, Low = 1×
- * - Traffic lights: Red < 50 | Yellow 50–79 | Green ≥ 80
- *
- * Access gate: Requires Module 2 complete — assessment status must be
- * 'scoring', 'complete', or 'locked' (locked = payment pending).
- *
- * Phase 3 note: The live score calculation engine and per-component drill-down
- * ship in Phase 4. This page shows the locked or preview state for Phase 1.
+ * Gate: org must be covered (Module 1) and have at least one answered question (Module 2).
  */
 
 import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
-import {
-  BarChart3,
-  Lock,
-  ChevronRight,
-  Info,
-  TrendingUp,
-} from 'lucide-react';
+import Link from 'next/link';
+import { BarChart3, Lock, ChevronRight, Calculator } from 'lucide-react';
+import { AUDIT_COMPONENTS } from '@/lib/components';
+import ScoreActions from './ScoreActions';
 
-// ---------------------------------------------------------------------------
-// Check Module 3 unlock status
-// ---------------------------------------------------------------------------
+interface ComponentScore {
+  componentNumber: number;
+  score: number;
+  status: 'green' | 'yellow' | 'red';
+}
 
-async function checkModule3Unlocked(clerkUserId: string): Promise<{
-  unlocked: boolean;
-  assessmentStatus: string | null;
-}> {
+async function fetchScoringData(clerkUserId: string) {
   const { db } = await import('@/db');
-  const { userRoles, assessments } = await import('@/db/schema');
-  const { eq, desc } = await import('drizzle-orm');
+  const { userRoles, assessments, eligibilityResults, componentScores, answers } = await import('@/db/schema');
+  const { eq, desc, sql } = await import('drizzle-orm');
 
   const roleRows = await db
     .select({ orgId: userRoles.orgId })
     .from(userRoles)
     .where(eq(userRoles.clerkUserId, clerkUserId))
     .limit(1);
+  if (roleRows.length === 0) return { gated: 'no_org' as const };
 
-  if (roleRows.length === 0) return { unlocked: false, assessmentStatus: null };
+  const { orgId } = roleRows[0];
 
-  const orgId = roleRows[0].orgId;
+  const eligRows = await db
+    .select({ covered: eligibilityResults.covered })
+    .from(eligibilityResults)
+    .where(eq(eligibilityResults.orgId, orgId))
+    .orderBy(desc(eligibilityResults.createdAt))
+    .limit(1);
+  if (!eligRows[0]?.covered) return { gated: 'eligibility' as const };
 
   const assessmentRows = await db
-    .select({ status: assessments.status })
+    .select({ id: assessments.id, status: assessments.status })
     .from(assessments)
     .where(eq(assessments.orgId, orgId))
     .orderBy(desc(assessments.createdAt))
     .limit(1);
+  if (assessmentRows.length === 0) return { gated: 'no_assessment' as const };
 
-  const status = assessmentRows[0]?.status ?? null;
+  const { id: assessmentId, status: assessmentStatus } = assessmentRows[0];
 
-  // Module 3 is unlocked when assessment has moved past the Module 2 submission
-  // stage. 'locked' status means payment is pending but the scoring data is
-  // available — the UI can still show scores as an incentive to pay.
-  const unlocked =
-    status === 'scoring' || status === 'complete' || status === 'locked';
+  const countRows = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(answers)
+    .where(eq(answers.assessmentId, assessmentId));
+  const answerCount = Number(countRows[0]?.c ?? 0);
+  if (answerCount === 0) return { gated: 'no_answers' as const };
 
-  return { unlocked, assessmentStatus: status };
+  const scores = await db
+    .select({
+      componentNumber: componentScores.componentNumber,
+      score: componentScores.score,
+      status: componentScores.status,
+    })
+    .from(componentScores)
+    .where(eq(componentScores.assessmentId, assessmentId))
+    .orderBy(componentScores.componentNumber);
+
+  return {
+    gated: false as const,
+    assessmentId,
+    assessmentStatus,
+    answerCount,
+    scores: scores as ComponentScore[],
+  };
 }
-
-// ---------------------------------------------------------------------------
-// Page component
-// ---------------------------------------------------------------------------
 
 export default async function ScoringPage() {
   const { userId } = await auth();
   if (!userId) redirect('/sign-in');
 
-  let unlocked = false;
-  let assessmentStatus: string | null = null;
-
+  let data: Awaited<ReturnType<typeof fetchScoringData>> = { gated: 'no_org' };
   try {
-    const result = await checkModule3Unlocked(userId);
-    unlocked = result.unlocked;
-    assessmentStatus = result.assessmentStatus;
+    data = await fetchScoringData(userId);
   } catch {
-    // DB unavailable — show locked state as safe default
+    // DB unavailable
   }
 
-  if (!unlocked) {
-    return <LockedView />;
+  if (data.gated) {
+    return <GatedView reason={data.gated} />;
   }
 
-  return <UnlockedView assessmentStatus={assessmentStatus} />;
-}
+  const { assessmentId, assessmentStatus, answerCount, scores } = data;
+  const hasScores = scores.length > 0;
 
-// ---------------------------------------------------------------------------
-// Locked state
-// ---------------------------------------------------------------------------
+  // Build a map for O(1) lookup when rendering the component grid
+  const scoreMap = new Map(scores.map(s => [s.componentNumber, s]));
 
-function LockedView() {
-  return (
-    <div className="min-h-full px-8 py-8">
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-navy-600/80">
-            <Lock size={20} className="text-slate-500" aria-hidden="true" />
-          </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-              Module 3 — Locked
-            </p>
-            <h1 className="font-sora text-2xl font-semibold text-slate-400">
-              Scoring Dashboard
-            </h1>
-          </div>
-        </div>
-      </div>
+  // Overall score = average of all component scores
+  const overallScore = hasScores
+    ? Math.round(scores.reduce((sum, s) => sum + s.score, 0) / scores.length)
+    : null;
+  const overallStatus = overallScore !== null
+    ? overallScore >= 80 ? 'green' : overallScore >= 50 ? 'yellow' : 'red'
+    : null;
 
-      {/* Lock explanation */}
-      <div className="max-w-2xl rounded-xl border border-navy-600 bg-navy-600/30 p-6 mb-6">
-        <div className="flex items-start gap-3 mb-4">
-          <Lock size={16} className="mt-0.5 flex-shrink-0 text-slate-500" aria-hidden="true" />
-          <div>
-            <h2 className="font-sora text-base font-semibold text-slate-300">
-              Complete Module 2 — Audit Assessment first
-            </h2>
-            <p className="mt-2 text-sm text-slate-500 leading-relaxed">
-              The Scoring Dashboard becomes available after you submit the full
-              40-question audit assessment across all 18{' '}
-              <span className="font-mono text-xs text-slate-400">§7123(c)</span>{' '}
-              components and complete payment. Scores are calculated automatically
-              from your submitted answers.
-            </p>
-          </div>
-        </div>
-
-        {/* Steps to unlock */}
-        <div className="mt-4 pt-4 border-t border-navy-700">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-600">
-            Steps to unlock
-          </p>
-          <ol className="space-y-2 text-sm text-slate-500">
-            <li className="flex items-start gap-2">
-              <span className="flex-shrink-0 font-mono text-xs text-slate-600 mt-0.5">1.</span>
-              Complete the{' '}
-              <span className="text-teal-400/70">Eligibility Screener</span>{' '}
-              with a Covered result.
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="flex-shrink-0 font-mono text-xs text-slate-600 mt-0.5">2.</span>
-              Answer all applicable questions in the{' '}
-              <span className="text-teal-400/70">Audit Assessment</span> (Module 2).
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="flex-shrink-0 font-mono text-xs text-slate-600 mt-0.5">3.</span>
-              Submit the assessment and complete payment via Stripe.
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="flex-shrink-0 font-mono text-xs text-slate-600 mt-0.5">4.</span>
-              Scores are calculated automatically and this dashboard unlocks.
-            </li>
-          </ol>
-        </div>
-      </div>
-
-      {/* Preview of scoring features */}
-      <div className="max-w-2xl rounded-xl border border-navy-600 bg-navy-600/20 p-6">
-        <div className="flex items-start gap-3 mb-4">
-          <Info size={16} className="mt-0.5 flex-shrink-0 text-slate-500" aria-hidden="true" />
-          <h3 className="font-sora text-sm font-semibold text-slate-500">
-            What you&apos;ll see here
-          </h3>
-        </div>
-        <ul className="space-y-2 text-sm text-slate-600">
-          {SCORING_PREVIEW.map((item, i) => (
-            <li key={i} className="flex items-start gap-2">
-              <ChevronRight size={14} className="mt-0.5 flex-shrink-0 text-slate-700" aria-hidden="true" />
-              {item}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Unlocked state — shown when assessment status is scoring/complete/locked
-// ---------------------------------------------------------------------------
-
-function UnlockedView({ assessmentStatus }: { assessmentStatus: string | null }) {
-  const isPendingPayment = assessmentStatus === 'locked';
+  const greenCount = scores.filter(s => s.status === 'green').length;
+  const yellowCount = scores.filter(s => s.status === 'yellow').length;
+  const redCount = scores.filter(s => s.status === 'red').length;
 
   return (
     <div className="min-h-full px-8 py-8">
-      {/* Page header */}
+      {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-400/10">
-            <BarChart3 size={20} className="text-teal-400" aria-hidden="true" />
+            <BarChart3 size={20} className="text-teal-400" />
           </div>
           <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-teal-400">
-              Module 3
-            </p>
-            <h1 className="font-sora text-2xl font-semibold text-slate-100">
-              Scoring Dashboard
-            </h1>
+            <p className="text-xs font-medium uppercase tracking-wider text-teal-400">Module 3</p>
+            <h1 className="font-sora text-2xl font-semibold text-slate-100">Scoring Dashboard</h1>
           </div>
         </div>
-
         <p className="mt-2 text-sm text-slate-400 max-w-2xl">
-          Risk-weighted composite scores for each of the 18{' '}
-          <span className="font-mono text-xs text-slate-300">§7123(c)</span>{' '}
-          cybersecurity components. Traffic-light indicators flag components
-          requiring remediation before CPPA submission.
+          Risk-weighted composite scores for each{' '}
+          <span className="font-mono text-xs text-slate-300">§7123(c)</span> component.
+          Traffic-light status flags components that require remediation before CPPA submission.
         </p>
       </div>
 
-      {/* Payment pending banner */}
-      {isPendingPayment && (
-        <div className="mb-6 flex items-start gap-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 max-w-2xl">
-          <Info size={16} className="mt-0.5 flex-shrink-0 text-amber-400" aria-hidden="true" />
+      {/* Payment locked banner */}
+      {assessmentStatus === 'locked' && (
+        <div className="mb-6 max-w-2xl rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 flex items-start gap-3">
+          <Lock size={16} className="mt-0.5 flex-shrink-0 text-amber-400" />
           <div>
-            <p className="text-sm font-semibold text-amber-300">
-              Payment required to finalize scores
-            </p>
+            <p className="text-sm font-semibold text-amber-300">Payment required to unlock reports</p>
             <p className="mt-0.5 text-xs text-slate-400">
-              Your assessment is complete. Complete payment via Stripe to unlock
-              the Report Generator and download your CPPA submission documents.
-              Score previews are available below.
+              Your scores are calculated. Complete payment to generate CPPA submission documents.
             </p>
           </div>
         </div>
       )}
 
-      {/* Scoring method explanation */}
-      <div className="mb-6 max-w-2xl rounded-xl border border-navy-600 bg-navy-600/50 p-6">
-        <div className="flex items-start gap-3 mb-4">
-          <TrendingUp size={16} className="mt-0.5 flex-shrink-0 text-teal-400" aria-hidden="true" />
-          <h2 className="font-sora text-base font-semibold text-slate-100">
-            Scoring methodology
-          </h2>
-        </div>
-
-        {/* Score value legend */}
-        <div className="mb-4 grid grid-cols-4 gap-3">
-          {SCORE_VALUES.map(({ response, points, desc }) => (
-            <div
-              key={response}
-              className="rounded-lg bg-navy-700/80 p-3 text-center"
-            >
-              <p className="font-mono text-lg font-bold text-slate-100">{points}</p>
-              <p className="text-xs font-semibold text-slate-300">{response}</p>
-              <p className="mt-0.5 text-xs text-slate-500">{desc}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Traffic light key */}
-        <div className="mb-4 flex gap-4 flex-wrap">
-          {TRAFFIC_LIGHTS.map(({ color, bgClass, textClass, label, range }) => (
-            <div key={color} className="flex items-center gap-2">
-              <div className={`h-3 w-3 rounded-full ${bgClass}`} aria-hidden="true" />
-              <span className={`text-xs font-semibold ${textClass}`}>{label}</span>
-              <span className="text-xs text-slate-500">{range}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Risk weight multipliers */}
-        <div className="pt-4 border-t border-navy-600">
-          <p className="mb-2 text-xs text-slate-500 font-semibold uppercase tracking-wider">
-            Risk weight multipliers
-          </p>
-          <div className="flex gap-6 flex-wrap">
-            {RISK_WEIGHTS.map(({ weight, multiplier }) => (
-              <div key={weight} className="text-xs">
-                <span className="font-semibold text-slate-300">{weight}:</span>{' '}
-                <span className="font-mono text-slate-400">{multiplier}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Live scores placeholder */}
-      <div className="max-w-2xl rounded-xl border border-navy-600 bg-navy-600/20 p-6">
-        <div className="flex items-start gap-3 mb-4">
-          <Info size={16} className="mt-0.5 flex-shrink-0 text-slate-500" aria-hidden="true" />
+      {/* No scores yet */}
+      {!hasScores && (
+        <div className="mb-6 max-w-2xl rounded-xl border border-navy-600 bg-navy-600/20 p-6 flex items-start gap-4">
+          <Calculator size={20} className="mt-0.5 flex-shrink-0 text-teal-400" />
           <div>
-            <h3 className="font-sora text-sm font-semibold text-slate-400">
-              Per-component score grid
-            </h3>
-            <p className="mt-1 text-xs text-slate-500">
-              The interactive score grid with drill-down, remediation tracking,
-              and comparison views ships in Phase 4.
+            <p className="text-sm font-semibold text-slate-200 mb-1">Scores not yet calculated</p>
+            <p className="text-xs text-slate-400 mb-4">
+              {answerCount} question{answerCount !== 1 ? 's' : ''} answered. Click below to run the
+              weighted scoring algorithm across all answered components.
             </p>
+            <ScoreActions hasScores={false} assessmentId={assessmentId} />
           </div>
         </div>
+      )}
 
-        {/* Skeleton rows to communicate what the grid will look like */}
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-3 rounded-lg bg-navy-700/40 px-4 py-3"
-            >
-              <div className="h-2.5 w-2.5 rounded-full bg-navy-600" aria-hidden="true" />
-              <div className="h-3 w-48 rounded bg-navy-600/60" aria-hidden="true" />
-              <div className="ml-auto h-6 w-14 rounded bg-navy-600/60" aria-hidden="true" />
+      {/* Overall score card */}
+      {hasScores && overallScore !== null && overallStatus && (
+        <div className="mb-6 max-w-2xl rounded-xl border border-navy-600 bg-navy-600/30 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-1">
+                Overall Score
+              </p>
+              <div className="flex items-baseline gap-3">
+                <span
+                  className={`font-sora text-5xl font-bold ${
+                    overallStatus === 'green'
+                      ? 'text-score-green'
+                      : overallStatus === 'yellow'
+                      ? 'text-score-yellow'
+                      : 'text-score-red'
+                  }`}
+                >
+                  {overallScore}
+                </span>
+                <span className="text-lg text-slate-500">/100</span>
+              </div>
             </div>
-          ))}
-          <p className="text-center text-xs text-slate-600 pt-2">
-            18 component rows — available in Phase 4
+
+            {/* Traffic light summary */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <div className="h-2.5 w-2.5 rounded-full bg-score-green" />
+                <span className="text-xs text-slate-400">{greenCount} Green</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-2.5 w-2.5 rounded-full bg-score-yellow" />
+                <span className="text-xs text-slate-400">{yellowCount} Yellow</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-2.5 w-2.5 rounded-full bg-score-red" />
+                <span className="text-xs text-slate-400">{redCount} Red</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Overall score bar */}
+          <div className="h-2 w-full rounded-full bg-navy-800">
+            <div
+              className={`h-2 rounded-full transition-all duration-700 ${
+                overallStatus === 'green'
+                  ? 'bg-score-green'
+                  : overallStatus === 'yellow'
+                  ? 'bg-score-yellow'
+                  : 'bg-score-red'
+              }`}
+              style={{ width: `${overallScore}%` }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Average across {scores.length} scored component{scores.length !== 1 ? 's' : ''} ·{' '}
+            {answerCount} questions answered
           </p>
+        </div>
+      )}
+
+      {/* Component score grid */}
+      {hasScores && (
+        <div className="mb-6 max-w-2xl space-y-1.5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Component Scores
+            </p>
+            <ScoreActions hasScores={true} assessmentId={assessmentId} />
+          </div>
+
+          {AUDIT_COMPONENTS.map(comp => {
+            const s = scoreMap.get(comp.number);
+            return (
+              <div
+                key={comp.number}
+                className="flex items-center gap-3 rounded-lg border border-navy-600/60 bg-navy-600/20 px-4 py-3"
+              >
+                {/* Traffic light dot */}
+                <div
+                  className={`h-2.5 w-2.5 flex-shrink-0 rounded-full ${
+                    !s
+                      ? 'bg-slate-700'
+                      : s.status === 'green'
+                      ? 'bg-score-green'
+                      : s.status === 'yellow'
+                      ? 'bg-score-yellow'
+                      : 'bg-score-red'
+                  }`}
+                />
+
+                {/* Component name */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-[10px] text-slate-600">
+                      §7123(c)({comp.number})
+                    </span>
+                    <span className="text-xs font-medium text-slate-300 truncate">
+                      {comp.title}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Score bar + value */}
+                {s ? (
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <div className="w-24 h-1.5 rounded-full bg-navy-800">
+                      <div
+                        className={`h-1.5 rounded-full ${
+                          s.status === 'green'
+                            ? 'bg-score-green'
+                            : s.status === 'yellow'
+                            ? 'bg-score-yellow'
+                            : 'bg-score-red'
+                        }`}
+                        style={{ width: `${s.score}%` }}
+                      />
+                    </div>
+                    <span
+                      className={`font-mono text-xs font-semibold w-8 text-right ${
+                        s.status === 'green'
+                          ? 'text-score-green'
+                          : s.status === 'yellow'
+                          ? 'text-score-yellow'
+                          : 'text-score-red'
+                      }`}
+                    >
+                      {s.score}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="font-mono text-xs text-slate-700 flex-shrink-0">—</span>
+                )}
+
+                {/* Link to component questions */}
+                <Link
+                  href={`/dashboard/assessment/${comp.number}`}
+                  className="flex-shrink-0 text-slate-600 hover:text-teal-400 transition-colors"
+                >
+                  <ChevronRight size={14} />
+                </Link>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Scoring methodology note */}
+      <div className="max-w-2xl rounded-xl border border-navy-600/40 bg-navy-600/10 px-5 py-4">
+        <div className="flex gap-6 flex-wrap text-xs text-slate-500">
+          <span><span className="text-slate-400 font-semibold">Yes</span> = 100 pts</span>
+          <span><span className="text-slate-400 font-semibold">Partial</span> = 50 pts</span>
+          <span><span className="text-slate-400 font-semibold">No</span> = 0 pts</span>
+          <span><span className="text-slate-400 font-semibold">N/A</span> = excluded</span>
+          <span className="text-slate-600">·</span>
+          <span><span className="text-slate-400 font-semibold">Critical</span> 4× · <span className="text-slate-400 font-semibold">High</span> 3× · <span className="text-slate-400 font-semibold">Medium</span> 2× · <span className="text-slate-400 font-semibold">Low</span> 1×</span>
         </div>
       </div>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Static display data
-// ---------------------------------------------------------------------------
+function GatedView({ reason }: { reason: 'no_org' | 'eligibility' | 'no_assessment' | 'no_answers' }) {
+  const messages: Record<typeof reason, { title: string; body: string; href: string; cta: string }> = {
+    no_org: {
+      title: 'Organization setup required',
+      body: 'Complete onboarding to set up your organization before accessing the Scoring Dashboard.',
+      href: '/onboarding',
+      cta: 'Go to Onboarding',
+    },
+    eligibility: {
+      title: 'Eligibility Screener required',
+      body: 'Complete the Eligibility Screener with a Covered result to unlock the Audit Assessment and Scoring Dashboard.',
+      href: '/dashboard/eligibility',
+      cta: 'Go to Eligibility Screener',
+    },
+    no_assessment: {
+      title: 'No assessment found',
+      body: 'Start the Audit Assessment (Module 2) to begin answering questions. Scores are calculated from your answers.',
+      href: '/dashboard/assessment',
+      cta: 'Go to Audit Assessment',
+    },
+    no_answers: {
+      title: 'No answers recorded yet',
+      body: 'Answer at least one question in the Audit Assessment before calculating scores.',
+      href: '/dashboard/assessment',
+      cta: 'Go to Audit Assessment',
+    },
+  };
 
-const SCORING_PREVIEW: string[] = [
-  'Composite risk-weighted score (0–100) for each of the 18 §7123(c) components.',
-  'Traffic-light status: Red (<50), Yellow (50–79), Green (≥80) per component.',
-  'Drill-down view showing individual question scores within each component.',
-  'Overall organization score derived from all applicable components.',
-  'Remediation recommendations for Red and Yellow components.',
-  'Historical score comparison if re-assessments have been run.',
-];
+  const msg = messages[reason];
 
-const SCORE_VALUES: Array<{ response: string; points: string; desc: string }> = [
-  { response: 'Yes', points: '100', desc: 'Full credit' },
-  { response: 'Partial', points: '50', desc: 'Half credit' },
-  { response: 'No', points: '0', desc: 'No credit' },
-  { response: 'N/A', points: '—', desc: 'Excluded' },
-];
+  return (
+    <div className="min-h-full px-8 py-8">
+      <div className="mb-8">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-navy-600/80">
+            <Lock size={20} className="text-slate-500" />
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Module 3 — Locked</p>
+            <h1 className="font-sora text-2xl font-semibold text-slate-400">Scoring Dashboard</h1>
+          </div>
+        </div>
+      </div>
 
-const TRAFFIC_LIGHTS: Array<{
-  color: string;
-  bgClass: string;
-  textClass: string;
-  label: string;
-  range: string;
-}> = [
-  {
-    color: 'green',
-    bgClass: 'bg-score-green',
-    textClass: 'text-score-green',
-    label: 'Green',
-    range: '≥ 80',
-  },
-  {
-    color: 'yellow',
-    bgClass: 'bg-score-yellow',
-    textClass: 'text-score-yellow',
-    label: 'Yellow',
-    range: '50–79',
-  },
-  {
-    color: 'red',
-    bgClass: 'bg-score-red',
-    textClass: 'text-score-red',
-    label: 'Red',
-    range: '< 50',
-  },
-];
-
-const RISK_WEIGHTS: Array<{ weight: string; multiplier: string }> = [
-  { weight: 'Critical', multiplier: '4×' },
-  { weight: 'High', multiplier: '3×' },
-  { weight: 'Medium', multiplier: '2×' },
-  { weight: 'Low', multiplier: '1×' },
-];
+      <div className="max-w-2xl rounded-xl border border-navy-600 bg-navy-600/30 p-6">
+        <p className="text-sm font-semibold text-slate-300 mb-2">{msg.title}</p>
+        <p className="text-xs text-slate-400 mb-4 leading-relaxed">{msg.body}</p>
+        <Link
+          href={msg.href}
+          className="inline-flex items-center gap-1.5 text-xs text-teal-400 hover:text-teal-300 transition-colors"
+        >
+          {msg.cta} <ChevronRight size={12} />
+        </Link>
+      </div>
+    </div>
+  );
+}
