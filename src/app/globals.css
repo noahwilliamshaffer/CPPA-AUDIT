@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #0F1B2D;
+    --foreground: #F0F4F8;
+  }
+
+  body {
+    @apply bg-navy-700 text-slate-100 antialiased;
+    font-family: var(--font-sora), sans-serif;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0a1220;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2F5380;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #009E90;
+  }
+
+  /* Always-visible focus ring per accessibility requirement */
+  :focus-visible {
+    outline: 2px solid #00C4B4;
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  /* Traffic light score helpers */
+  .score-red { color: #EF4444; }
+  .score-yellow { color: #F59E0B; }
+  .score-green { color: #22C55E; }
+}
