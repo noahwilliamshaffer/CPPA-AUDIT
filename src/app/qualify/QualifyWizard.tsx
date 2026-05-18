@@ -288,7 +288,7 @@ export default function QualifyWizard() {
             title="We&apos;ll Provide a Qualified Auditor"
             subtitle="ApexShield assigns an independent, regulation-compliant auditor."
             body="Our auditors satisfy the §7122(a)(3) independence requirement and carry E&O insurance. We handle scheduling, conduct the full 18-component assessment, and produce Document A and Document B for CPPA submission — all at a flat engagement fee."
-            tags={['§7122(a)(3) compliant', 'E&O insured', 'Full-service', '$9,500 flat fee']}
+            tags={['§7122(a)(3) compliant', 'E&O insured', 'Full-service']}
             primaryLabel="Schedule a Call"
             primaryHref={CALENDAR_URL}
             secondaryLabel={`Email ${CONTACT_EMAIL}`}
