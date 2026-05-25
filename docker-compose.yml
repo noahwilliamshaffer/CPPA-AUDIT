@@ -1,27 +1,76 @@
 version: '3.8'
 
-# ShieldAudit — local Docker stack
+# =============================================================================
+# ShieldAudit — Self-Contained Client Deployment
 #
-# The app server runs in this container.
-# The database is your existing Neon instance (accessed over the internet).
-# This is the standard "local Docker" pattern: containerised server, cloud DB.
+# Both the app AND the database run locally on your machine.
+# All audit data is stored in the 'shieldaudit_db' Docker volume — it NEVER
+# leaves your machine or touches any external server.
 #
-# Usage:
-#   1. cp .env.docker.example .env.docker
-#   2. Fill in your Clerk keys AND your Neon DATABASE_URL in .env.docker
+# ── Quick start ────────────────────────────────────────────────────────────
+#   1. cp .env.client.example .env.client
+#   2. Fill in your Clerk keys in .env.client  (only thing required)
 #   3. docker compose up --build
 #   4. Open http://localhost:3000
+#   The database schema and question bank are set up automatically.
 #
-# For fully offline / air-gapped deployment (no Neon):
-#   Switch src/db/index.ts to drizzle-orm/node-postgres + local postgres.
-#   That build must run on Linux (CI/CD) to avoid the Node 20 Windows
-#   OpenSSL crash. See DOCKER.md for instructions.
+# ── Data persistence ───────────────────────────────────────────────────────
+#   All data lives in the 'shieldaudit_db' named Docker volume on this machine.
+#
+#   Backup:   docker run --rm -v shieldaudit_cppa_db:/data -v $(pwd):/out \
+#               alpine tar czf /out/shieldaudit-backup.tar.gz -C /data .
+#   Restore:  docker run --rm -v shieldaudit_cppa_db:/data -v $(pwd):/out \
+#               alpine tar xzf /out/shieldaudit-backup.tar.gz -C /data
+#   Wipe:     docker compose down -v   ← WARNING: deletes ALL audit data
+#
+# ── Updates ────────────────────────────────────────────────────────────────
+#   docker compose pull && docker compose up --build
+#   Database schema migrations run automatically on every startup.
+# =============================================================================
 
 services:
+
+  # ── PostgreSQL 16 (local, private) ─────────────────────────────────────────
+  # Stores all audit data on this machine. Never exposes data externally.
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: shieldaudit
+      POSTGRES_USER: shieldaudit
+      POSTGRES_PASSWORD: shieldaudit_internal_pw
+    volumes:
+      - shieldaudit_cppa_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shieldaudit -d shieldaudit"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    # Port 5432 is NOT exposed to the host — database is container-internal only.
+    # Uncomment to connect with a local DB client (psql, DBeaver, etc.):
+    # ports: ["5432:5432"]
+
+  # ── ShieldAudit Application ─────────────────────────────────────────────────
   app:
     build: .
     restart: unless-stopped
     ports:
       - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
     env_file:
-      - .env.docker
+      - .env.client
+    environment:
+      # Internal DB URL — always points to the local 'db' container above.
+      # Overrides any DATABASE_URL set in .env.client.
+      DATABASE_URL: postgresql://shieldaudit:shieldaudit_internal_pw@db:5432/shieldaudit
+      # Feature flags — clients don't need S3 or Stripe in mock mode.
+      STORAGE_MODE: mock
+      STRIPE_MODE: mock
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+
+volumes:
+  shieldaudit_cppa_db:
+    driver: local
