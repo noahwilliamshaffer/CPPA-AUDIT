@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
+    "docker:reset": "docker compose down -v && docker compose up --build"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.3.4",

@@ -28,10 +28,10 @@ import {
   Lock,
   ChevronRight,
   Info,
-  Download,
   FileCheck2,
   Clock,
 } from 'lucide-react';
+import { ReportActionButton } from './ReportActions';
 
 // ---------------------------------------------------------------------------
 // Check Module 4 unlock status
@@ -325,23 +325,17 @@ function UnlockedView({
                   </div>
                 </div>
 
-                {/* Generate button — disabled in Phase 1, and also when payment pending */}
-                <button
-                  disabled
-                  className="flex-shrink-0 inline-flex cursor-not-allowed items-center gap-2 rounded-lg bg-teal-400/20 px-4 py-2 text-xs font-semibold text-teal-400/50"
-                  title={
-                    !isComplete
-                      ? 'Payment required to generate documents'
-                      : 'Document generation ships in Phase 5'
+                {/* Generate button — live when assessment is complete */}
+                <ReportActionButton
+                  reportType={doc.type as 'audit_report' | 'executive_certification'}
+                  label="Generate DOCX"
+                  disabled={!isComplete}
+                  disabledReason={
+                    isPendingPayment
+                      ? 'Complete payment to generate documents'
+                      : 'Scores must be calculated before generating documents'
                   }
-                  aria-disabled="true"
-                >
-                  <Download size={13} aria-hidden="true" />
-                  Generate
-                  <span className="ml-0.5 rounded bg-navy-800/60 px-1 py-0.5 text-xs font-normal text-slate-600">
-                    {!isComplete ? 'Payment' : 'Phase 5'}
-                  </span>
-                </button>
+                />
               </div>
 
               {/* Format options */}
@@ -377,23 +371,15 @@ function UnlockedView({
         </div>
       </div>
 
-      {/* What comes with Phase 5 */}
-      {isComplete && (
-        <div className="mt-6 max-w-2xl rounded-xl border border-navy-600 bg-navy-600/20 p-5">
-          <div className="flex items-start gap-3 mb-3">
-            <Info size={15} className="mt-0.5 flex-shrink-0 text-slate-500" aria-hidden="true" />
-            <p className="text-xs font-semibold text-slate-500">
-              Document generation ships in Phase 5
-            </p>
-          </div>
-          <ul className="space-y-1.5 text-xs text-slate-600">
-            {PHASE5_FEATURES.map((f, i) => (
-              <li key={i} className="flex items-start gap-2">
-                <ChevronRight size={12} className="mt-0.5 flex-shrink-0 text-slate-700" aria-hidden="true" />
-                {f}
-              </li>
-            ))}
-          </ul>
+      {/* Scoring link when not complete */}
+      {!isComplete && !isPendingPayment && (
+        <div className="mt-4 max-w-2xl">
+          <a
+            href="/dashboard/scoring"
+            className="inline-flex items-center gap-1 text-xs text-teal-400 hover:text-teal-300 transition-colors"
+          >
+            Go to Scoring Dashboard <ChevronRight size={12} />
+          </a>
         </div>
       )}
     </div>
@@ -429,11 +415,3 @@ const DOCUMENT_TYPES: Array<{
   },
 ];
 
-const PHASE5_FEATURES: string[] = [
-  'Puppeteer-based PDF generation from the audit data with ShieldAudit branding.',
-  'DOCX export using the docx package for attorney review and annotation.',
-  'White-label branding: substitute your firm logo and colors (reseller feature).',
-  'Digital signature block generation for Document B.',
-  'Secure cloud storage with 5-year retention and download history.',
-  'Re-generation with version tracking when remediation updates are made.',
-];

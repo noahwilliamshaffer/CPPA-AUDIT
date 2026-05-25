@@ -1,0 +1,27 @@
+version: '3.8'
+
+# ShieldAudit — local Docker stack
+#
+# The app server runs in this container.
+# The database is your existing Neon instance (accessed over the internet).
+# This is the standard "local Docker" pattern: containerised server, cloud DB.
+#
+# Usage:
+#   1. cp .env.docker.example .env.docker
+#   2. Fill in your Clerk keys AND your Neon DATABASE_URL in .env.docker
+#   3. docker compose up --build
+#   4. Open http://localhost:3000
+#
+# For fully offline / air-gapped deployment (no Neon):
+#   Switch src/db/index.ts to drizzle-orm/node-postgres + local postgres.
+#   That build must run on Linux (CI/CD) to avoid the Node 20 Windows
+#   OpenSSL crash. See DOCKER.md for instructions.
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.docker

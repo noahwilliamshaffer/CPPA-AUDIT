@@ -12,6 +12,7 @@ const isPublicRoute = createRouteMatcher([
   '/sign-in(.*)',
   '/sign-up(.*)',
   '/pricing',
+  '/api/stripe/webhook', // Stripe sends unauthenticated POST — must be public
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

@@ -9,9 +9,10 @@
 import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { BarChart3, Lock, ChevronRight, Calculator } from 'lucide-react';
+import { BarChart3, Lock, ChevronRight, Calculator, FileText } from 'lucide-react';
 import { AUDIT_COMPONENTS } from '@/lib/components';
 import ScoreActions from './ScoreActions';
+import PaymentCTA from './PaymentCTA';
 
 interface ComponentScore {
   componentNumber: number;
@@ -130,16 +131,47 @@ export default async function ScoringPage() {
         </p>
       </div>
 
-      {/* Payment locked banner */}
+      {/* Submit & Pay CTA — shown when scores are calculated but payment not started */}
+      {assessmentStatus === 'scoring' && hasScores && (
+        <div className="mb-6 max-w-2xl rounded-xl border border-teal-400/30 bg-teal-400/5 p-5">
+          <p className="text-sm font-semibold text-teal-300 mb-1">Scores ready — submit your assessment</p>
+          <p className="text-xs text-slate-400 mb-4">
+            Review the scores below, then submit to generate your CPPA submission documents
+            (Document A and Document B).
+          </p>
+          <PaymentCTA />
+        </div>
+      )}
+
+      {/* Payment pending banner — shown after Stripe checkout initiated */}
       {assessmentStatus === 'locked' && (
         <div className="mb-6 max-w-2xl rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 flex items-start gap-3">
           <Lock size={16} className="mt-0.5 flex-shrink-0 text-amber-400" />
           <div>
-            <p className="text-sm font-semibold text-amber-300">Payment required to unlock reports</p>
+            <p className="text-sm font-semibold text-amber-300">Payment processing</p>
             <p className="mt-0.5 text-xs text-slate-400">
-              Your scores are calculated. Complete payment to generate CPPA submission documents.
+              Your payment is being confirmed. Reports will unlock automatically once
+              payment clears. This usually takes a few seconds.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Complete — link to reports */}
+      {assessmentStatus === 'complete' && (
+        <div className="mb-6 max-w-2xl rounded-xl border border-score-green/30 bg-score-green/5 p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <FileText size={16} className="flex-shrink-0 text-score-green" aria-hidden="true" />
+            <p className="text-sm text-slate-300">
+              Assessment complete — your CPPA submission documents are ready.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/reports"
+            className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-score-green/20 px-3 py-1.5 text-xs font-semibold text-score-green hover:bg-score-green/30 transition-colors"
+          >
+            Generate Documents <ChevronRight size={12} />
+          </Link>
         </div>
       )}
 
