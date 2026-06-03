@@ -1,38 +1,43 @@
-/**
+﻿/**
  * POST /api/reports/generate
  *
  * Generates Document A (Audit Report) or Document B (Executive Certification)
- * as a DOCX file and returns it as a binary download.
+ * as either a PDF or DOCX file and returns it as a binary download.
  *
  * In mock mode (STORAGE_MODE=mock) the document is generated in memory and
- * streamed directly to the client. In production mode the document would be
- * uploaded to S3/R2 and a presigned URL returned.
+ * streamed directly to the client.
  *
  * A record is inserted into the `reports` table on every successful generation
  * to maintain the 5-year audit trail required by §7123.
  *
- * Body: { reportType: 'audit_report' | 'executive_certification' }
- * Response: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+ * Body: {
+ *   reportType: 'audit_report' | 'executive_certification',
+ *   format?: 'pdf' | 'docx'   (defaults to 'pdf')
+ * }
+ * Response: application/pdf  OR  application/vnd.openxmlformats-officedocument...
  */
 
-import { auth } from '@clerk/nextjs/server';
 import { NextRequest, NextResponse } from 'next/server';
-// IMPORTANT: docx generators are dynamically imported inside the POST handler.
+// IMPORTANT: document generators are dynamically imported inside the POST handler.
 // The docx package (via jszip) triggers Node.js crypto initialization, which
 // causes an assertion failure on Windows Node.js 20 when loaded at module-init
 // time during the Next.js build worker phase. Lazy import avoids this.
 
 const REPORT_TYPES = ['audit_report', 'executive_certification'] as const;
+const FORMATS = ['pdf', 'docx'] as const;
+
 type ReportType = (typeof REPORT_TYPES)[number];
+type Format = (typeof FORMATS)[number];
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = 'local-user';
+  
 
   // Parse + validate body
   let reportType: ReportType;
+  let format: Format;
   try {
-    const body = await req.json() as { reportType?: unknown };
+    const body = await req.json() as { reportType?: unknown; format?: unknown };
     if (!body.reportType || !REPORT_TYPES.includes(body.reportType as ReportType)) {
       return NextResponse.json(
         { error: `reportType must be one of: ${REPORT_TYPES.join(', ')}` },
@@ -40,6 +45,10 @@ export async function POST(req: NextRequest) {
       );
     }
     reportType = body.reportType as ReportType;
+    // Default to PDF
+    format = (body.format && FORMATS.includes(body.format as Format))
+      ? body.format as Format
+      : 'pdf';
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
@@ -168,46 +177,78 @@ export async function POST(req: NextRequest) {
   const yellowCount = scoreRows.filter((s) => s.status === 'yellow').length;
   const redCount = scoreRows.filter((s) => s.status === 'red').length;
 
+  const slug = orgName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+
   // ── Generate document ────────────────────────────────────────────────────
-  // Dynamic imports: docx/jszip loads crypto which crashes Windows Node 20 at
-  // module init time. By importing here (inside the async handler) we defer
-  // the load to actual request time, safely past the build worker phase.
-  const { generateAuditReportDocx } = await import('@/lib/docx/auditReport');
-  const { generateExecCertificationDocx } = await import('@/lib/docx/execCertification');
-
-  let docxBuffer: Buffer;
+  let docBuffer: Buffer;
   let fileName: string;
+  let contentType: string;
 
-  if (reportType === 'audit_report') {
-    docxBuffer = await generateAuditReportDocx({
-      orgName,
-      legalEntity,
-      auditPeriodStart,
-      auditPeriodEnd,
-      generatedAt,
-      components,
-    });
-    const slug = orgName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
-    fileName = `ShieldAudit-Report-A-${slug}-${auditPeriodEnd}.docx`;
+  if (format === 'pdf') {
+    // PDF generators — dynamically imported to avoid crypto init at build time
+    const { generateAuditReportPdf } = await import('@/lib/pdf/auditReport');
+    const { generateExecCertificationPdf } = await import('@/lib/pdf/execCertification');
+
+    if (reportType === 'audit_report') {
+      docBuffer = await generateAuditReportPdf({
+        orgName,
+        legalEntity,
+        auditPeriodStart,
+        auditPeriodEnd,
+        generatedAt,
+        components,
+      });
+      fileName = `ShieldAudit-Report-A-${slug}-${auditPeriodEnd ?? 'undated'}.pdf`;
+    } else {
+      docBuffer = await generateExecCertificationPdf({
+        orgName,
+        legalEntity,
+        auditPeriodStart,
+        auditPeriodEnd,
+        generatedAt,
+        overallScore,
+        greenCount,
+        yellowCount,
+        redCount,
+        scoredComponents: scoredComponents.length,
+      });
+      fileName = `ShieldAudit-Report-B-${slug}-${auditPeriodEnd ?? 'undated'}.pdf`;
+    }
+    contentType = 'application/pdf';
   } else {
-    docxBuffer = await generateExecCertificationDocx({
-      orgName,
-      legalEntity,
-      auditPeriodStart,
-      auditPeriodEnd,
-      generatedAt,
-      overallScore,
-      greenCount,
-      yellowCount,
-      redCount,
-      scoredComponents: scoredComponents.length,
-    });
-    const slug = orgName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
-    fileName = `ShieldAudit-Report-B-${slug}-${auditPeriodEnd}.docx`;
+    // DOCX generators — dynamically imported to avoid crypto init at build time
+    const { generateAuditReportDocx } = await import('@/lib/docx/auditReport');
+    const { generateExecCertificationDocx } = await import('@/lib/docx/execCertification');
+
+    if (reportType === 'audit_report') {
+      docBuffer = await generateAuditReportDocx({
+        orgName,
+        legalEntity,
+        auditPeriodStart,
+        auditPeriodEnd,
+        generatedAt,
+        components,
+      });
+      fileName = `ShieldAudit-Report-A-${slug}-${auditPeriodEnd ?? 'undated'}.docx`;
+    } else {
+      docBuffer = await generateExecCertificationDocx({
+        orgName,
+        legalEntity,
+        auditPeriodStart,
+        auditPeriodEnd,
+        generatedAt,
+        overallScore,
+        greenCount,
+        yellowCount,
+        redCount,
+        scoredComponents: scoredComponents.length,
+      });
+      fileName = `ShieldAudit-Report-B-${slug}-${auditPeriodEnd ?? 'undated'}.docx`;
+    }
+    contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   }
 
   // ── Persist report record ────────────────────────────────────────────────
-  // Calculate version number (increment from prior reports of same type)
   const priorRows = await db
     .select({ version: reports.version })
     .from(reports)
@@ -216,7 +257,7 @@ export async function POST(req: NextRequest) {
     .limit(1);
 
   const version = (priorRows[0]?.version ?? 0) + 1;
-  const mockUrl = `mock://reports/${assessmentId}/${reportType}/v${version}`;
+  const mockUrl = `mock://reports/${assessmentId}/${reportType}/${format}/v${version}`;
 
   await db.insert(reports).values({
     assessmentId,
@@ -226,15 +267,13 @@ export async function POST(req: NextRequest) {
     version,
   });
 
-  // ── Return DOCX as download ──────────────────────────────────────────────
-  // Convert Buffer to Uint8Array for Next.js Response compatibility
-  return new NextResponse(new Uint8Array(docxBuffer), {
+  // ── Return document as download ──────────────────────────────────────────
+  return new NextResponse(new Uint8Array(docBuffer), {
     status: 200,
     headers: {
-      'Content-Type':
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Type': contentType,
       'Content-Disposition': `attachment; filename="${fileName}"`,
-      'Content-Length': String(docxBuffer.length),
+      'Content-Length': String(docBuffer.length),
       'Cache-Control': 'no-store',
     },
   });

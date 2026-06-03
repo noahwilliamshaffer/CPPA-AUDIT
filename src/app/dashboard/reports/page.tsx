@@ -21,7 +21,6 @@
  * in Phase 5. This page shows the locked or preview state for Phase 1.
  */
 
-import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import {
   FileText,
@@ -32,6 +31,9 @@ import {
   Clock,
 } from 'lucide-react';
 import { ReportActionButton } from './ReportActions';
+
+export const dynamic = 'force-dynamic';
+
 
 // ---------------------------------------------------------------------------
 // Check Module 4 unlock status
@@ -104,8 +106,7 @@ async function checkModule4Unlocked(clerkUserId: string): Promise<{
 // ---------------------------------------------------------------------------
 
 export default async function ReportsPage() {
-  const { userId } = await auth();
-  if (!userId) redirect('/sign-in');
+  const userId = 'local-user';
 
   let unlocked = false;
   let assessmentStatus: string | null = null;
@@ -179,27 +180,17 @@ function LockedView() {
           <ol className="space-y-2 text-sm text-slate-500">
             <li className="flex items-start gap-2">
               <span className="flex-shrink-0 font-mono text-xs text-slate-600 mt-0.5">1.</span>
-              Run the{' '}
-              <span className="text-teal-400/70">Eligibility Screener</span>{' '}
-              and confirm coverage.
+              Complete the full{' '}
+              <span className="text-teal-400/70">Audit Assessment</span>{' '}
+              (all 18 §7123(c) components).
             </li>
             <li className="flex items-start gap-2">
               <span className="flex-shrink-0 font-mono text-xs text-slate-600 mt-0.5">2.</span>
-              Complete the full{' '}
-              <span className="text-teal-400/70">Audit Assessment</span>{' '}
-              (all 18 components).
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="flex-shrink-0 font-mono text-xs text-slate-600 mt-0.5">3.</span>
-              Submit the assessment and complete payment.
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="flex-shrink-0 font-mono text-xs text-slate-600 mt-0.5">4.</span>
-              Review scores in the{' '}
+              Review your risk scores in the{' '}
               <span className="text-teal-400/70">Scoring Dashboard</span>.
             </li>
             <li className="flex items-start gap-2">
-              <span className="flex-shrink-0 font-mono text-xs text-slate-600 mt-0.5">5.</span>
+              <span className="flex-shrink-0 font-mono text-xs text-slate-600 mt-0.5">3.</span>
               Generate Document A and Document B here.
             </li>
           </ol>
@@ -325,10 +316,9 @@ function UnlockedView({
                   </div>
                 </div>
 
-                {/* Generate button — live when assessment is complete */}
+                {/* PDF + DOCX download buttons */}
                 <ReportActionButton
                   reportType={doc.type as 'audit_report' | 'executive_certification'}
-                  label="Generate DOCX"
                   disabled={!isComplete}
                   disabledReason={
                     isPendingPayment
@@ -338,16 +328,15 @@ function UnlockedView({
                 />
               </div>
 
-              {/* Format options */}
-              <div className="mt-3 pt-3 border-t border-navy-700 flex gap-3">
-                {doc.formats.map((fmt) => (
-                  <span
-                    key={fmt}
-                    className="rounded bg-navy-700/60 px-2 py-0.5 font-mono text-xs text-slate-500"
-                  >
-                    .{fmt}
-                  </span>
-                ))}
+              {/* Format info */}
+              <div className="mt-3 pt-3 border-t border-navy-700 flex items-center gap-2">
+                <span className="text-xs text-slate-600">Available formats:</span>
+                <span className="rounded bg-teal-400/10 px-2 py-0.5 font-mono text-xs text-teal-500 border border-teal-400/20">
+                  .pdf
+                </span>
+                <span className="rounded bg-slate-700/40 px-2 py-0.5 font-mono text-xs text-slate-500 border border-slate-600/30">
+                  .docx
+                </span>
               </div>
             </div>
           );
@@ -364,8 +353,8 @@ function UnlockedView({
               Per{' '}
               <span className="font-mono text-slate-400">Cal. Code Regs. tit. 11, §7123</span>,
               all audit reports and certifications must be retained for a minimum of 5 years
-              from the date of generation. ShieldAudit stores all generated documents in
-              secure cloud storage on your behalf.
+              from the date of generation. Download and store your PDF and DOCX files in a
+              secure location. ShieldAudit logs every generation event in your audit trail.
             </p>
           </div>
         </div>
@@ -395,7 +384,6 @@ const DOCUMENT_TYPES: Array<{
   title: string;
   description: string;
   regulation: string;
-  formats: string[];
 }> = [
   {
     type: 'audit_report',
@@ -403,7 +391,6 @@ const DOCUMENT_TYPES: Array<{
     description:
       'The full written audit report prepared by the independent auditor. Includes findings for all 18 §7123(c) components, risk scores, evidence citations, and remediation recommendations.',
     regulation: 'Cal. Code Regs. tit. 11, §7123(d)',
-    formats: ['pdf', 'docx'],
   },
   {
     type: 'executive_certification',
@@ -411,7 +398,6 @@ const DOCUMENT_TYPES: Array<{
     description:
       'Signed certification by the executive officer responsible for the business\'s cybersecurity program, affirming the audit was conducted in accordance with §7122–§7123.',
     regulation: 'Cal. Code Regs. tit. 11, §7122(a)(5)',
-    formats: ['pdf', 'docx'],
   },
 ];
 

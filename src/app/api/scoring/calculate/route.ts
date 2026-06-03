@@ -1,4 +1,4 @@
-/**
+﻿/**
  * POST /api/scoring/calculate
  * Calculates risk-weighted scores for all answered §7123(c) components and
  * stores the results in component_scores. Advances assessment status from
@@ -11,7 +11,6 @@
  *   Traffic light: Green≥80, Yellow 50–79, Red<50
  */
 
-import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
 const WEIGHT: Record<string, number> = {
@@ -35,8 +34,8 @@ function trafficLight(score: number): 'green' | 'yellow' | 'red' {
 }
 
 export async function POST() {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = 'local-user';
+  
 
   const { db } = await import('@/db');
   const { userRoles, assessments, answers, questions, componentScores } = await import('@/db/schema');

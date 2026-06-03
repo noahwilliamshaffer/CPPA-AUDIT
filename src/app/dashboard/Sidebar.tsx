@@ -7,24 +7,17 @@
  * - usePathname() to highlight the active route
  * - useClerk().signOut() for the sign-out button
  *
- * Navigation enforces LINEAR module progression:
- * Locked items are visually muted and completely non-interactive
- * (no href, pointer-events-none) to prevent keyboard/screen-reader bypasses.
- *
- * Unlock gates (mirrors layout.tsx logic, kept here for tooltip copy):
- * - Module 1 (Eligibility):  Always unlocked.
- * - Module 2 (Assessment):   Requires Module 1 complete (covered = true result).
- * - Module 3 (Scoring):      Requires Module 2 complete (assessment submitted + payment).
- * - Module 4 (Reports):      Requires Module 3 available (scoring data exists).
- * - Settings:                Always unlocked.
+ * Unlock gates (mirrors layout.tsx logic):
+ * - Module 2 (Assessment):  Always unlocked — eligibility pre-screened at provisioning.
+ * - Module 3 (Scoring):     Requires assessment answers submitted.
+ * - Module 4 (Reports):     Requires scoring data to exist.
+ * - Settings:               Always unlocked.
  */
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useClerk } from '@clerk/nextjs';
 import {
   Shield,
-  ClipboardCheck,
   ClipboardList,
   BarChart3,
   FileText,
@@ -41,8 +34,7 @@ import {
 export interface SidebarProps {
   orgName: string;
   userRole: 'admin' | 'auditor' | 'business_admin' | 'reseller';
-  module1Unlocked: boolean; // Always true — first step of the workflow
-  module2Unlocked: boolean;
+  module2Unlocked: boolean; // Always true — eligibility pre-screened at provisioning
   module3Unlocked: boolean;
   module4Unlocked: boolean;
   userInitials: string;
@@ -82,7 +74,6 @@ interface NavItemDef {
   // Which prop key controls the lock state; null means always unlocked
   unlockedPropKey: keyof Pick<
     SidebarProps,
-    | 'module1Unlocked'
     | 'module2Unlocked'
     | 'module3Unlocked'
     | 'module4Unlocked'
@@ -93,18 +84,11 @@ interface NavItemDef {
 
 const NAV_ITEMS: NavItemDef[] = [
   {
-    label: 'Eligibility Screener',
-    href: '/dashboard/eligibility',
-    Icon: ClipboardCheck,
-    unlockedPropKey: 'module1Unlocked', // Always true, but typed consistently
-    lockedTooltip: null,
-  },
-  {
     label: 'Audit Assessment',
     href: '/dashboard/assessment',
     Icon: ClipboardList,
     unlockedPropKey: 'module2Unlocked',
-    lockedTooltip: 'Complete the Eligibility Screener first',
+    lockedTooltip: null,
   },
   {
     label: 'Scoring Dashboard',
@@ -137,7 +121,6 @@ const NAV_ITEMS: NavItemDef[] = [
 export default function Sidebar({
   orgName,
   userRole,
-  module1Unlocked,
   module2Unlocked,
   module3Unlocked,
   module4Unlocked,
@@ -145,11 +128,9 @@ export default function Sidebar({
   userEmail,
 }: SidebarProps) {
   const pathname = usePathname();
-  const { signOut } = useClerk();
 
   // Build a lookup so nav item rendering can check unlock state by prop key.
   const unlockMap: Record<string, boolean> = {
-    module1Unlocked,
     module2Unlocked,
     module3Unlocked,
     module4Unlocked,
@@ -246,9 +227,9 @@ export default function Sidebar({
 
         {/* Sign out button */}
         <button
-          onClick={() => signOut({ redirectUrl: '/sign-in' })}
+          onClick={() => window.location.href = '/'}
           className="mt-3 flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-slate-400 transition-colors hover:bg-navy-600 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
-          aria-label="Sign out of ShieldAudit"
+          aria-label="Return to home"
         >
           <LogOut size={15} aria-hidden="true" />
           Sign Out

@@ -1,14 +1,16 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * Module 2: Audit Assessment — /dashboard/assessment
  * 18 §7123(c) component cards with live per-component completion status.
- * Locked behind Module 1 Covered determination.
+ * Always accessible — eligibility is pre-screened before client provisioning.
  */
 
-import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ClipboardList, CheckCircle2, Circle, Lock, ChevronRight, AlertCircle } from 'lucide-react';
+import { ClipboardList, CheckCircle2, Circle, ChevronRight, AlertCircle } from 'lucide-react';
 import { AUDIT_COMPONENTS } from '@/lib/components';
+import NewAssessmentButton from './NewAssessmentButton';
 
 interface ComponentStatus {
   componentNumber: number;
@@ -18,11 +20,10 @@ interface ComponentStatus {
 
 async function fetchAssessmentStatus(clerkUserId: string): Promise<{
   assessmentId: string | null;
-  covered: boolean;
   componentStatuses: ComponentStatus[];
 }> {
   const { db } = await import('@/db');
-  const { userRoles, assessments, eligibilityResults, answers, questions } = await import('@/db/schema');
+  const { userRoles, assessments, answers, questions } = await import('@/db/schema');
   const { eq, desc, and, sql } = await import('drizzle-orm');
 
   const roleRows = await db
@@ -31,18 +32,8 @@ async function fetchAssessmentStatus(clerkUserId: string): Promise<{
     .where(eq(userRoles.clerkUserId, clerkUserId))
     .limit(1);
 
-  if (roleRows.length === 0) return { assessmentId: null, covered: false, componentStatuses: [] };
+  if (roleRows.length === 0) return { assessmentId: null, componentStatuses: [] };
   const { orgId } = roleRows[0];
-
-  const eligRows = await db
-    .select({ covered: eligibilityResults.covered })
-    .from(eligibilityResults)
-    .where(eq(eligibilityResults.orgId, orgId))
-    .orderBy(desc(eligibilityResults.createdAt))
-    .limit(1);
-
-  const covered = eligRows[0]?.covered === true;
-  if (!covered) return { assessmentId: null, covered: false, componentStatuses: [] };
 
   const assessmentRows = await db
     .select({ id: assessments.id })
@@ -51,13 +42,13 @@ async function fetchAssessmentStatus(clerkUserId: string): Promise<{
     .orderBy(desc(assessments.createdAt))
     .limit(1);
 
-  if (assessmentRows.length === 0) return { assessmentId: null, covered: true, componentStatuses: [] };
+  if (assessmentRows.length === 0) return { assessmentId: null, componentStatuses: [] };
   const assessmentId = assessmentRows[0].id;
 
   const answerCounts = await db
     .select({
       componentNumber: questions.componentNumber,
-      answered: sql<number>`count(${answers.id})::int`,
+      answered: sql<number>`cast(count(${answers.id}) as integer)`,
     })
     .from(questions)
     .leftJoin(
@@ -74,21 +65,20 @@ async function fetchAssessmentStatus(clerkUserId: string): Promise<{
     total: c.questionCount,
   }));
 
-  return { assessmentId, covered: true, componentStatuses };
+  return { assessmentId, componentStatuses };
 }
 
 export default async function AssessmentPage() {
-  const { userId } = await auth();
-  if (!userId) redirect('/sign-in');
+  
+  
 
+  const userId = 'local-user';
   let assessmentId: string | null = null;
-  let covered = false;
   let componentStatuses: ComponentStatus[] = [];
 
   try {
     const result = await fetchAssessmentStatus(userId);
     assessmentId = result.assessmentId;
-    covered = result.covered;
     componentStatuses = result.componentStatuses;
   } catch {
     // DB unavailable
@@ -102,14 +92,17 @@ export default async function AssessmentPage() {
   return (
     <div className="min-h-full px-8 py-8">
       <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-400/10">
-            <ClipboardList size={20} className="text-teal-400" aria-hidden="true" />
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-400/10">
+              <ClipboardList size={20} className="text-teal-400" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-teal-400">Module 2</p>
+              <h1 className="font-sora text-2xl font-semibold text-slate-100">Audit Assessment</h1>
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-teal-400">Module 2</p>
-            <h1 className="font-sora text-2xl font-semibold text-slate-100">Audit Assessment</h1>
-          </div>
+          <NewAssessmentButton />
         </div>
         <p className="mt-2 text-sm text-slate-400 max-w-2xl">
           Answer questions across all 18{' '}
@@ -118,25 +111,7 @@ export default async function AssessmentPage() {
         </p>
       </div>
 
-      {!covered && (
-        <div className="max-w-2xl rounded-xl border border-amber-400/30 bg-amber-400/10 p-6 flex items-start gap-3">
-          <Lock size={18} className="mt-0.5 flex-shrink-0 text-amber-400" />
-          <div>
-            <p className="text-sm font-semibold text-amber-400">Module 2 is locked</p>
-            <p className="mt-1 text-xs text-slate-400">
-              Complete the Eligibility Screener with a{' '}
-              <span className="font-semibold text-amber-400">Covered</span> determination to unlock the Audit Assessment.
-            </p>
-            <Link href="/dashboard/eligibility" className="mt-3 inline-flex items-center gap-1.5 text-xs text-teal-400 hover:text-teal-300 transition-colors">
-              Go to Eligibility Screener <ChevronRight size={12} />
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {covered && (
-        <>
-          <div className="mb-6 max-w-2xl rounded-xl bg-navy-600/50 border border-navy-600 p-5">
+      <div className="mb-6 max-w-2xl rounded-xl bg-navy-600/50 border border-navy-600 p-5">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-semibold text-slate-200">Overall Progress</p>
               <span className="font-mono text-sm text-teal-400">{overallPct}%</span>
@@ -213,8 +188,6 @@ export default async function AssessmentPage() {
               );
             })}
           </div>
-        </>
-      )}
     </div>
   );
 }

@@ -1,9 +1,10 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * /dashboard/assessment/[component] — questions for a single §7123(c) component.
  * Server renders current answer state; client component handles answer submission.
  */
 
-import { auth } from '@clerk/nextjs/server';
 import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -75,8 +76,7 @@ async function fetchComponentData(clerkUserId: string, componentNumber: number) 
 }
 
 export default async function ComponentPage({ params }: PageProps) {
-  const { userId } = await auth();
-  if (!userId) redirect('/sign-in');
+  const userId = 'local-user';
 
   const { component } = await params;
   const componentNumber = parseInt(component, 10);

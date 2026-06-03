@@ -1,11 +1,12 @@
-import { auth } from '@clerk/nextjs/server';
+
 import { redirect } from 'next/navigation';
 import { ClipboardCheck } from 'lucide-react';
 import ScreenerWizard from './ScreenerWizard';
 
+
 export default async function ScreenerPage() {
-  const { userId } = await auth();
-  if (!userId) redirect('/sign-in');
+  
+  
 
   return (
     <div className="min-h-full px-8 py-8">

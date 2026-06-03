@@ -28,12 +28,22 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Dummy build-time env — Next.js validates these at build time.
-# Real values are injected at runtime via docker-compose env_file / environment.
+# NEXT_PUBLIC_* vars are inlined at build time by Next.js — they must be real.
+# Passed in as build args from docker-compose (see build.args in docker-compose.yml).
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_placeholder
+ARG NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+ARG NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+ARG NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard
+ARG NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/onboarding
+
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder
-ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_placeholder
 ENV CLERK_SECRET_KEY=sk_test_placeholder
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ENV NEXT_PUBLIC_CLERK_SIGN_IN_URL=$NEXT_PUBLIC_CLERK_SIGN_IN_URL
+ENV NEXT_PUBLIC_CLERK_SIGN_UP_URL=$NEXT_PUBLIC_CLERK_SIGN_UP_URL
+ENV NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=$NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL
+ENV NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=$NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL
 
 RUN npm run build
 
@@ -68,6 +78,12 @@ RUN mkdir -p docker
 COPY --from=builder /app/docker/seed.mjs      ./docker/seed.mjs
 
 RUN chmod +x /app/docker-entrypoint.sh
+
+# ── pdfkit font path guard ─────────────────────────────────────────────────
+# serverExternalPackages in next.config.mjs prevents Turbopack from bundling
+# pdfkit (which would rewrite __dirname to /ROOT). This symlink is a fallback
+# guard in case that config is ever removed or overridden.
+RUN ln -sfn /app /ROOT
 
 USER nextjs
 EXPOSE 3000

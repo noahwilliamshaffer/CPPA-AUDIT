@@ -1,10 +1,9 @@
-/**
+﻿/**
  * POST /api/assessment/answer
  * Upserts an auditor's answer for a specific question within an assessment.
  * Also writes an audit trail entry for every change.
  */
 
-import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
@@ -16,8 +15,8 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = 'local-user';
+  
 
   let body: z.infer<typeof bodySchema>;
   try {

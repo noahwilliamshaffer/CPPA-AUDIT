@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * Module 3: Scoring Dashboard — /dashboard/scoring
  * Displays risk-weighted composite scores for all 18 §7123(c) components.
@@ -6,7 +8,6 @@
  * Gate: org must be covered (Module 1) and have at least one answered question (Module 2).
  */
 
-import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { BarChart3, Lock, ChevronRight, Calculator, FileText } from 'lucide-react';
@@ -53,7 +54,7 @@ async function fetchScoringData(clerkUserId: string) {
   const { id: assessmentId, status: assessmentStatus } = assessmentRows[0];
 
   const countRows = await db
-    .select({ c: sql<number>`count(*)::int` })
+    .select({ c: sql<number>`cast(count(*) as integer)` })
     .from(answers)
     .where(eq(answers.assessmentId, assessmentId));
   const answerCount = Number(countRows[0]?.c ?? 0);
@@ -79,8 +80,7 @@ async function fetchScoringData(clerkUserId: string) {
 }
 
 export default async function ScoringPage() {
-  const { userId } = await auth();
-  if (!userId) redirect('/sign-in');
+  const userId = 'local-user';
 
   let data: Awaited<ReturnType<typeof fetchScoringData>> = { gated: 'no_org' };
   try {

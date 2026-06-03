@@ -10,7 +10,7 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 interface Question {
   id: string;
   questionText: string;
-  riskWeight: RiskWeight;
+  riskWeight: string;
   nistCsfMapping: string | null;
   cisControlMapping: string | null;
   displayOrder: number;
@@ -18,7 +18,7 @@ interface Question {
 
 interface ExistingAnswer {
   questionId: string;
-  response: ResponseValue;
+  response: string;
   auditorNotes: string | null;
 }
 
@@ -67,7 +67,7 @@ const RESPONSE_OPTIONS: {
   },
 ];
 
-const RISK_BADGE: Record<RiskWeight, string> = {
+const RISK_BADGE: Record<string, string> = {
   critical: 'text-red-400 bg-red-400/10 border border-red-400/30',
   high: 'text-orange-400 bg-orange-400/10 border border-orange-400/30',
   medium: 'text-amber-400 bg-amber-400/10 border border-amber-400/30',
@@ -80,7 +80,7 @@ export default function ComponentQuestions({
   assessmentId: initialAssessmentId,
 }: Props) {
   const [responses, setResponses] = useState<Record<string, ResponseValue>>(() =>
-    Object.fromEntries(existingAnswers.map(a => [a.questionId, a.response]))
+    Object.fromEntries(existingAnswers.map(a => [a.questionId, a.response as ResponseValue]))
   );
 
   const [notes, setNotes] = useState<Record<string, string>>(() =>

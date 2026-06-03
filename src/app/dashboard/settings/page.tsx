@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 /**
  * Settings — /dashboard/settings
  *
@@ -14,7 +16,6 @@
  * should never be gated behind audit progress.
  */
 
-import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import {
   Settings,
@@ -87,8 +88,7 @@ const REVENUE_TIER_LABELS: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 export default async function SettingsPage() {
-  const { userId } = await auth();
-  if (!userId) redirect('/sign-in');
+  const userId = 'local-user';
 
   let orgDetails: OrgDetails | null = null;
 

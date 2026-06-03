@@ -34,3 +34,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# SQLite database files (local data — never commit)
+*.db
+*.db-shm
+*.db-wal
+
+# Generated screenshots and dev logs
+/screenshots/
+*.log
+
+# Claude Code internals
+.claude/worktrees/
+
+# Env files with credentials
+.env.client

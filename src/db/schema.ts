@@ -1,131 +1,52 @@
 /**
- * SHIELDAUDIT DATABASE SCHEMA
+ * SHIELDAUDIT DATABASE SCHEMA — SQLite (offline mode)
  *
- * Multi-tenant PostgreSQL schema with org_id row-level isolation.
- * Every query touching business data MUST filter by org_id.
+ * Single-file SQLite database stored at shieldaudit.db.
+ * No cloud, no Docker, no server required.
  *
  * Retention requirement: Assessment data and reports must be retained
  * for a minimum of 5 years per Cal. Code Regs. tit. 11, §7123.
  *
  * Immutability requirement: audit_trail_entries is append-only.
- * No UPDATE or DELETE is ever executed against this table.
- * A DB-level trigger (see migrations/immutable_audit_trail.sql) enforces this.
  */
 
 import {
-  pgTable,
-  pgEnum,
-  uuid,
-  varchar,
+  sqliteTable,
   text,
-  boolean,
   integer,
-  timestamp,
-  date,
-  jsonb,
   index,
-} from 'drizzle-orm/pg-core';
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 import { relations } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
-// Enums
+// organizations — root tenant. One row per business using the tool.
 // ---------------------------------------------------------------------------
-
-export const revenueTierEnum = pgEnum('revenue_tier', [
-  'under_50m',
-  '50m_to_100m',
-  'over_100m',
-]);
-
-export const planEnum = pgEnum('plan', ['direct', 'reseller']);
-
-export const userRoleEnum = pgEnum('user_role', [
-  'admin',
-  'auditor',
-  'business_admin',
-  'reseller',
-]);
-
-export const assessmentStatusEnum = pgEnum('assessment_status', [
-  'draft',
-  'in_progress',
-  'scoring',
-  'complete',
-  'locked',
-]);
-
-export const triggerFiredEnum = pgEnum('trigger_fired', [
-  'revenue',
-  'consumer_volume',
-  'sensitive_volume',
-  'data_sales',
-  'not_covered',
-]);
-
-export const riskWeightEnum = pgEnum('risk_weight', [
-  'critical',
-  'high',
-  'medium',
-  'low',
-]);
-
-export const answerResponseEnum = pgEnum('answer_response', [
-  'yes',
-  'partial',
-  'no',
-  'not_applicable',
-]);
-
-export const testResultEnum = pgEnum('test_result', [
-  'pass',
-  'fail',
-  'partial',
-]);
-
-export const componentScoreStatusEnum = pgEnum('component_score_status', [
-  'red',
-  'yellow',
-  'green',
-]);
-
-export const reportTypeEnum = pgEnum('report_type', [
-  'audit_report',
-  'executive_certification',
-]);
-
-// ---------------------------------------------------------------------------
-// organizations — Multi-tenant root. One row per covered business or reseller.
-// Every other table is scoped to an org via org_id.
-// ---------------------------------------------------------------------------
-export const organizations = pgTable('organizations', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: varchar('name', { length: 255 }).notNull(),
-  legalEntity: varchar('legal_entity', { length: 255 }).notNull(),
-  revenueTier: revenueTierEnum('revenue_tier'),
+export const organizations = sqliteTable('organizations', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: text('name').notNull(),
+  legalEntity: text('legal_entity').notNull(),
+  revenueTier: text('revenue_tier'),        // 'under_50m' | '50m_to_100m' | 'over_100m'
   consumerRecordCount: integer('consumer_record_count'),
-  contactEmail: varchar('contact_email', { length: 255 }).notNull(),
-  // JSONB for white-label config: { logo_url, firm_name, firm_color, subdomain }
-  brandConfig: jsonb('brand_config'),
-  // Per §7122(a)(3): internal auditors must report to exec mgmt not responsible for cybersecurity
+  contactEmail: text('contact_email').notNull(),
+  brandConfig: text('brand_config', { mode: 'json' }),
   internalAuditorReportingStructure: text('internal_auditor_reporting_structure'),
-  plan: planEnum('plan').notNull().default('direct'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
+  plan: text('plan').notNull().default('direct'), // 'direct' | 'reseller'
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
 // ---------------------------------------------------------------------------
-// user_roles — RBAC per org. Maps Clerk user_id to role within an org.
-// Roles enforce §7122(a)(3) independence requirements.
+// user_roles — maps a local user ID to a role within an org.
+// In offline mode, user_id is always 'local-user'.
 // ---------------------------------------------------------------------------
-export const userRoles = pgTable(
+export const userRoles = sqliteTable(
   'user_roles',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organizations.id, { onDelete: 'cascade' }),
-    clerkUserId: varchar('clerk_user_id', { length: 255 }).notNull(),
-    role: userRoleEnum('role').notNull(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    orgId: text('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    clerkUserId: text('clerk_user_id').notNull(),
+    role: text('role').notNull(), // 'admin' | 'auditor' | 'business_admin' | 'reseller'
+    createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   },
   (t) => ({
     orgUserIdx: index('user_roles_org_user_idx').on(t.orgId, t.clerkUserId),
@@ -133,64 +54,48 @@ export const userRoles = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// assessments — One per audit engagement per org per audit period.
-// Stripe payment gate: status moves to 'locked' after Module 2 completion
-// until payment is confirmed.
+// assessments — one per audit engagement.
 // ---------------------------------------------------------------------------
-export const assessments = pgTable('assessments', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organizations.id, { onDelete: 'cascade' }),
-  auditPeriodStart: date('audit_period_start').notNull(),
-  auditPeriodEnd: date('audit_period_end').notNull(),
-  status: assessmentStatusEnum('status').notNull().default('draft'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  completedAt: timestamp('completed_at'),
-  auditorId: varchar('auditor_id', { length: 255 }), // Clerk user ID
-  usesAdmt: boolean('uses_admt').notNull().default(false),
-  stripePaymentIntentId: varchar('stripe_payment_intent_id', { length: 255 }),
-  lockedAt: timestamp('locked_at'),
+export const assessments = sqliteTable('assessments', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  auditPeriodStart: text('audit_period_start').notNull(),
+  auditPeriodEnd: text('audit_period_end').notNull(),
+  status: text('status').notNull().default('draft'), // 'draft' | 'in_progress' | 'scoring' | 'complete' | 'locked'
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  auditorId: text('auditor_id'),
+  usesAdmt: integer('uses_admt', { mode: 'boolean' }).notNull().default(false),
+  stripePaymentIntentId: text('stripe_payment_intent_id'),
+  lockedAt: integer('locked_at', { mode: 'timestamp' }),
 });
 
 // ---------------------------------------------------------------------------
-// eligibility_results — Output of Module 1 screener (§7120).
-// Determines coverage, fires the applicable OR-logic trigger, and calculates
-// the CPPA submission deadline based on revenue tier.
+// eligibility_results — coverage determination (auto-provisioned at onboarding).
 // ---------------------------------------------------------------------------
-export const eligibilityResults = pgTable('eligibility_results', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  assessmentId: uuid('assessment_id')
-    .notNull()
-    .references(() => assessments.id, { onDelete: 'cascade' }),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organizations.id, { onDelete: 'cascade' }),
-  covered: boolean('covered').notNull(),
-  // §7120(b): which threshold fired the coverage determination
-  triggerFired: triggerFiredEnum('trigger_fired').notNull(),
-  revenueTier: revenueTierEnum('revenue_tier'),
-  submissionDeadline: date('submission_deadline'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
+export const eligibilityResults = sqliteTable('eligibility_results', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
+  orgId: text('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  covered: integer('covered', { mode: 'boolean' }).notNull(),
+  triggerFired: text('trigger_fired').notNull(), // 'revenue' | 'consumer_volume' | etc.
+  revenueTier: text('revenue_tier'),
+  submissionDeadline: text('submission_deadline'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
 // ---------------------------------------------------------------------------
-// component_applicability — Auditor marks each of 18 §7123(c) components
-// as applicable or not before answering questions.
-// Per §7123(c): "if applicable to the business's information system"
+// component_applicability
 // ---------------------------------------------------------------------------
-export const componentApplicability = pgTable(
+export const componentApplicability = sqliteTable(
   'component_applicability',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
-    assessmentId: uuid('assessment_id')
-      .notNull()
-      .references(() => assessments.id, { onDelete: 'cascade' }),
-    // component_number 1–18 per §7123(c) enumeration
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
     componentNumber: integer('component_number').notNull(),
-    applicable: boolean('applicable').notNull(),
-    auditorId: varchar('auditor_id', { length: 255 }).notNull(),
-    markedAt: timestamp('marked_at').notNull().defaultNow(),
+    applicable: integer('applicable', { mode: 'boolean' }).notNull(),
+    auditorId: text('auditor_id').notNull(),
+    markedAt: integer('marked_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   },
   (t) => ({
     assessmentComponentIdx: index('component_applicability_assessment_component_idx').on(
@@ -201,53 +106,40 @@ export const componentApplicability = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// questions — Seeded question bank. 40 questions across 18 §7123(c) components.
-// parent_question_id + trigger_condition enable adaptive branching.
-// Component order matches §7123(c) exactly (see seed file).
+// questions — seeded 40-question bank across 18 §7123(c) components.
 // ---------------------------------------------------------------------------
-export const questions = pgTable('questions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  // 1–18 matching the §7123(c) enumeration
+export const questions = sqliteTable('questions', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   componentNumber: integer('component_number').notNull(),
   questionText: text('question_text').notNull(),
-  riskWeight: riskWeightEnum('risk_weight').notNull(),
-  // e.g., "PR.AC-7", "ID.AM-1"
-  nistCsfMapping: varchar('nist_csf_mapping', { length: 50 }),
-  // e.g., "CIS 5.1", "CIS 1.1"
-  cisControlMapping: varchar('cis_control_mapping', { length: 50 }),
-  // FK to self for branching — null means always visible
-  parentQuestionId: uuid('parent_question_id'),
-  // JSONB condition: { "response": "yes" } means show when parent answer = yes
-  triggerCondition: jsonb('trigger_condition'),
+  riskWeight: text('risk_weight').notNull(), // 'critical' | 'high' | 'medium' | 'low'
+  nistCsfMapping: text('nist_csf_mapping'),
+  cisControlMapping: text('cis_control_mapping'),
+  parentQuestionId: text('parent_question_id'),
+  triggerCondition: text('trigger_condition', { mode: 'json' }),
   displayOrder: integer('display_order').notNull(),
-  active: boolean('active').notNull().default(true),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  // Remediation guidance — shown on scoring page for partial/no answers
+  remediation: text('remediation'),
 });
 
 // ---------------------------------------------------------------------------
-// answers — Auditor responses to questions. One per question per assessment.
-// Saved on every answer change; audit trail entry created on every change.
+// answers — auditor responses. One per question per assessment.
 // ---------------------------------------------------------------------------
-export const answers = pgTable(
+export const answers = sqliteTable(
   'answers',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
-    assessmentId: uuid('assessment_id')
-      .notNull()
-      .references(() => assessments.id, { onDelete: 'cascade' }),
-    questionId: uuid('question_id')
-      .notNull()
-      .references(() => questions.id),
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => organizations.id, { onDelete: 'cascade' }),
-    auditorId: varchar('auditor_id', { length: 255 }).notNull(),
-    response: answerResponseEnum('response').notNull(),
-    // Required when response = 'partial' or 'no' per audit standards
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
+    questionId: text('question_id').notNull().references(() => questions.id),
+    orgId: text('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    auditorId: text('auditor_id').notNull(),
+    response: text('response').notNull(), // 'yes' | 'partial' | 'no' | 'not_applicable'
     auditorNotes: text('auditor_notes'),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   },
   (t) => ({
-    assessmentQuestionIdx: index('answers_assessment_question_idx').on(
+    assessmentQuestionIdx: uniqueIndex('answers_assessment_question_idx').on(
       t.assessmentId,
       t.questionId
     ),
@@ -255,166 +147,115 @@ export const answers = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// evidence_items — Files uploaded to the Evidence Locker per component/question.
-// Per §7123(e): audit must be based on specific evidence reviewed by the auditor,
-// not on management assertions. At least one evidence item OR test log entry
-// is required per applicable component before it can be certified.
+// evidence_items
 // ---------------------------------------------------------------------------
-export const evidenceItems = pgTable('evidence_items', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  assessmentId: uuid('assessment_id')
-    .notNull()
-    .references(() => assessments.id, { onDelete: 'cascade' }),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organizations.id, { onDelete: 'cascade' }),
-  // 1–18 per §7123(c)
+export const evidenceItems = sqliteTable('evidence_items', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
+  orgId: text('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
   componentNumber: integer('component_number').notNull(),
-  // Optional: links evidence to a specific question within the component
-  questionId: uuid('question_id').references(() => questions.id),
-  // S3/R2 object key (or mock URL in dev when STORAGE_MODE=mock)
-  fileUrl: varchar('file_url', { length: 2048 }).notNull(),
-  fileName: varchar('file_name', { length: 255 }).notNull(),
-  fileType: varchar('file_type', { length: 100 }).notNull(),
+  questionId: text('question_id').references(() => questions.id),
+  fileUrl: text('file_url').notNull(),
+  fileName: text('file_name').notNull(),
+  fileType: text('file_type').notNull(),
   fileSizeBytes: integer('file_size_bytes').notNull(),
-  uploadedAt: timestamp('uploaded_at').notNull().defaultNow(),
-  uploadedBy: varchar('uploaded_by', { length: 255 }).notNull(),
+  uploadedAt: integer('uploaded_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  uploadedBy: text('uploaded_by').notNull(),
   description: text('description'),
 });
 
 // ---------------------------------------------------------------------------
-// test_logs — Auditor-recorded test results per component (Action B).
-// At least one test log entry or evidence item required before a component
-// can be marked complete per §7123(e).
+// test_logs
 // ---------------------------------------------------------------------------
-export const testLogs = pgTable('test_logs', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  assessmentId: uuid('assessment_id')
-    .notNull()
-    .references(() => assessments.id, { onDelete: 'cascade' }),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organizations.id, { onDelete: 'cascade' }),
+export const testLogs = sqliteTable('test_logs', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
+  orgId: text('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
   componentNumber: integer('component_number').notNull(),
-  testName: varchar('test_name', { length: 255 }).notNull(),
+  testName: text('test_name').notNull(),
   methodology: text('methodology').notNull(),
-  result: testResultEnum('result').notNull(),
-  conductedAt: date('conducted_at').notNull(),
+  result: text('result').notNull(), // 'pass' | 'fail' | 'partial'
+  conductedAt: text('conducted_at').notNull(),
   findings: text('findings').notNull(),
-  auditorId: varchar('auditor_id', { length: 255 }).notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
+  auditorId: text('auditor_id').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
 // ---------------------------------------------------------------------------
-// interview_logs — Auditor-recorded interview notes per component (Action C).
-// interviewee_title stores TITLE ONLY — never name, per privacy requirements.
+// interview_logs
 // ---------------------------------------------------------------------------
-export const interviewLogs = pgTable('interview_logs', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  assessmentId: uuid('assessment_id')
-    .notNull()
-    .references(() => assessments.id, { onDelete: 'cascade' }),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organizations.id, { onDelete: 'cascade' }),
+export const interviewLogs = sqliteTable('interview_logs', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
+  orgId: text('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
   componentNumber: integer('component_number').notNull(),
-  // Title only — never store names. Privacy requirement.
-  intervieweeTitle: varchar('interviewee_title', { length: 255 }).notNull(),
-  interviewDate: date('interview_date').notNull(),
+  intervieweeTitle: text('interviewee_title').notNull(),
+  interviewDate: text('interview_date').notNull(),
   topics: text('topics').notNull(),
   findings: text('findings').notNull(),
-  auditorId: varchar('auditor_id', { length: 255 }).notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
+  auditorId: text('auditor_id').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
 // ---------------------------------------------------------------------------
-// audit_trail_entries — IMMUTABLE. Append-only. Every auditor action is logged.
-// This table must NEVER have UPDATE or DELETE statements executed against it.
-// A DB-level trigger (prevent_audit_trail_mutation) enforces this at the
-// database level as a second safety net.
+// audit_trail_entries — IMMUTABLE append-only log.
 // ---------------------------------------------------------------------------
-export const auditTrailEntries = pgTable('audit_trail_entries', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  assessmentId: uuid('assessment_id').references(() => assessments.id),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organizations.id, { onDelete: 'cascade' }),
+export const auditTrailEntries = sqliteTable('audit_trail_entries', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  assessmentId: text('assessment_id').references(() => assessments.id),
+  orgId: text('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
   componentNumber: integer('component_number'),
-  questionId: uuid('question_id').references(() => questions.id),
-  auditorId: varchar('auditor_id', { length: 255 }).notNull(),
-  action: varchar('action', { length: 100 }).notNull(),
-  // Full prior state stored for complete audit history
-  priorValue: jsonb('prior_value'),
-  // Full new state stored
-  newValue: jsonb('new_value'),
-  // Array of evidence item IDs linked at time of action
-  evidenceIds: text('evidence_ids').array(),
-  timestamp: timestamp('timestamp').notNull().defaultNow(),
-  ipAddress: varchar('ip_address', { length: 45 }),
+  questionId: text('question_id').references(() => questions.id),
+  auditorId: text('auditor_id').notNull(),
+  action: text('action').notNull(),
+  priorValue: text('prior_value', { mode: 'json' }),
+  newValue: text('new_value', { mode: 'json' }),
+  evidenceIds: text('evidence_ids'),      // JSON array stored as text
+  timestamp: integer('timestamp', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  ipAddress: text('ip_address'),
 });
 
 // ---------------------------------------------------------------------------
-// component_scores — Calculated after Module 2 is complete (Module 3 input).
-// This table is a cache — scores are recalculated on demand from answers.
-// Scoring: Yes=100, Partial=50, No=0, N/A excluded from denominator.
-// Risk weights: Critical=4x, High=3x, Medium=2x, Low=1x.
-// Traffic lights: Red<50, Yellow 50–79, Green≥80.
+// component_scores — calculated risk-weighted scores per component.
+// Scoring: Yes=100, Partial=50, No=0. Weights: Crit=4x, High=3x, Med=2x, Low=1x.
+// Traffic lights: Red<50, Yellow 50-79, Green≥80.
 // ---------------------------------------------------------------------------
-export const componentScores = pgTable('component_scores', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  assessmentId: uuid('assessment_id')
-    .notNull()
-    .references(() => assessments.id, { onDelete: 'cascade' }),
+export const componentScores = sqliteTable('component_scores', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
   componentNumber: integer('component_number').notNull(),
-  score: integer('score').notNull(), // 0–100
-  status: componentScoreStatusEnum('status').notNull(),
-  calculatedAt: timestamp('calculated_at').notNull().defaultNow(),
+  score: integer('score').notNull(),       // 0–100
+  status: text('status').notNull(),        // 'red' | 'yellow' | 'green'
+  calculatedAt: integer('calculated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
 // ---------------------------------------------------------------------------
-// admt_assessments — ADMT sub-assessment for AI/significant decisions.
-// Triggered when assessment.uses_admt = true.
-// Per §7001(ddd): Automated Decision-Making Technology definition.
-// Per §7001(e): "Substantially replaces" human decision-making threshold.
+// admt_assessments
 // ---------------------------------------------------------------------------
-export const admtAssessments = pgTable('admt_assessments', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  assessmentId: uuid('assessment_id')
-    .notNull()
-    .references(() => assessments.id, { onDelete: 'cascade' }),
-  usesAdmtForSignificantDecisions: boolean(
-    'uses_admt_for_significant_decisions'
-  ).notNull(),
-  // Categories: financial_services, housing, education, employment, healthcare, other
-  significantDecisionTypes: text('significant_decision_types').array(),
+export const admtAssessments = sqliteTable('admt_assessments', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
+  usesAdmtForSignificantDecisions: integer('uses_admt_for_significant_decisions', { mode: 'boolean' }).notNull(),
+  significantDecisionTypes: text('significant_decision_types'), // JSON array as text
   biasControls: text('bias_controls'),
   optOutWorkflow: text('opt_out_workflow'),
-  humanReviewOverride: boolean('human_review_override'),
-  // True if ADMT substantially replaces (vs. merely assists) human decision-making
-  substantiallyReplacesHuman: boolean('substantially_replaces_human'),
+  humanReviewOverride: integer('human_review_override', { mode: 'boolean' }),
+  substantiallyReplacesHuman: integer('substantially_replaces_human', { mode: 'boolean' }),
   notes: text('notes'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 });
 
 // ---------------------------------------------------------------------------
-// reports — Generated Document A and Document B records.
-// Both documents must be retained for 5 years per §7123.
+// reports — generated Document A and Document B.
 // ---------------------------------------------------------------------------
-export const reports = pgTable('reports', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  assessmentId: uuid('assessment_id')
-    .notNull()
-    .references(() => assessments.id, { onDelete: 'cascade' }),
-  orgId: uuid('org_id')
-    .notNull()
-    .references(() => organizations.id, { onDelete: 'cascade' }),
-  generatedAt: timestamp('generated_at').notNull().defaultNow(),
-  // S3/R2 URL for the generated PDF
-  pdfUrl: varchar('pdf_url', { length: 2048 }),
-  // S3/R2 URL for the generated DOCX (for attorney review)
-  docxUrl: varchar('docx_url', { length: 2048 }),
-  reportType: reportTypeEnum('report_type').notNull(),
-  // Version increments each time reports are regenerated for the same assessment
+export const reports = sqliteTable('reports', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
+  orgId: text('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  generatedAt: integer('generated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  pdfUrl: text('pdf_url'),
+  docxUrl: text('docx_url'),
+  reportType: text('report_type').notNull(), // 'audit_report' | 'executive_certification'
   version: integer('version').notNull().default(1),
 });
 
@@ -427,28 +268,25 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   assessments: many(assessments),
 }));
 
-export const assessmentsRelations = relations(
-  assessments,
-  ({ one, many }) => ({
-    organization: one(organizations, {
-      fields: [assessments.orgId],
-      references: [organizations.id],
-    }),
-    eligibilityResult: one(eligibilityResults, {
-      fields: [assessments.id],
-      references: [eligibilityResults.assessmentId],
-    }),
-    componentApplicability: many(componentApplicability),
-    answers: many(answers),
-    evidenceItems: many(evidenceItems),
-    testLogs: many(testLogs),
-    interviewLogs: many(interviewLogs),
-    auditTrailEntries: many(auditTrailEntries),
-    componentScores: many(componentScores),
-    admtAssessment: one(admtAssessments, {
-      fields: [assessments.id],
-      references: [admtAssessments.assessmentId],
-    }),
-    reports: many(reports),
-  })
-);
+export const assessmentsRelations = relations(assessments, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [assessments.orgId],
+    references: [organizations.id],
+  }),
+  eligibilityResult: one(eligibilityResults, {
+    fields: [assessments.id],
+    references: [eligibilityResults.assessmentId],
+  }),
+  componentApplicability: many(componentApplicability),
+  answers: many(answers),
+  evidenceItems: many(evidenceItems),
+  testLogs: many(testLogs),
+  interviewLogs: many(interviewLogs),
+  auditTrailEntries: many(auditTrailEntries),
+  componentScores: many(componentScores),
+  admtAssessment: one(admtAssessments, {
+    fields: [assessments.id],
+    references: [admtAssessments.assessmentId],
+  }),
+  reports: many(reports),
+}));

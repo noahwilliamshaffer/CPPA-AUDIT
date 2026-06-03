@@ -1,9 +1,8 @@
-/**
+﻿/**
  * GET  /api/assessment/current — returns the org's most recent draft/in-progress assessment
  * POST /api/assessment/current — creates a new assessment if none exists in draft state
  */
 
-import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
 async function resolveOrg(userId: string) {
@@ -19,8 +18,8 @@ async function resolveOrg(userId: string) {
 }
 
 export async function GET() {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = 'local-user';
+  
 
   const orgId = await resolveOrg(userId);
   if (!orgId) return NextResponse.json({ error: 'No organization found.' }, { status: 404 });
@@ -54,8 +53,8 @@ export async function GET() {
 }
 
 export async function POST() {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = 'local-user';
+  
 
   const orgId = await resolveOrg(userId);
   if (!orgId) return NextResponse.json({ error: 'No organization found.' }, { status: 404 });

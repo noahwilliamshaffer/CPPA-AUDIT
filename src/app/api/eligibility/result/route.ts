@@ -1,5 +1,4 @@
-import { auth } from '@clerk/nextjs/server';
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 const bodySchema = z.object({
@@ -16,8 +15,8 @@ const TRIGGER_MAP = [
 ] as const;
 
 export async function POST(req: Request) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const userId = 'local-user';
+  
 
   let body: z.infer<typeof bodySchema>;
   try {

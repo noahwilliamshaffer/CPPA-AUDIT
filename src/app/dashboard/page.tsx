@@ -1,15 +1,16 @@
 /**
- * /dashboard — immediate redirect to Module 1 (Eligibility Screener).
+ * /dashboard — immediate redirect to the Audit Assessment (Module 2).
  *
- * This keeps the URL surface clean: /dashboard itself is never a destination
- * users land on. All entry points (post-login, post-onboarding) land here
- * and are immediately forwarded to the first step in the linear workflow.
- *
- * Server-side redirect means no flash of an empty layout before navigation.
+ * Eligibility screening happens before clients are provisioned; by the time
+ * a user reaches this dashboard their coverage is already confirmed. The
+ * assessment is therefore the first destination after login / onboarding.
  */
 
 import { redirect } from 'next/navigation';
 
+export const dynamic = 'force-dynamic';
+
+
 export default function DashboardPage(): never {
-  redirect('/dashboard/eligibility');
+  redirect('/dashboard/assessment');
 }

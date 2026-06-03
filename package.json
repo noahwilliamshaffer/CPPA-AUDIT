@@ -7,11 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src",
+    "setup": "node scripts/setup.mjs",
+    "go": "npm run setup && npm run build && npm run start",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio",
-    "docker:up": "docker compose up --build",
-    "docker:down": "docker compose down",
-    "docker:reset": "docker compose down -v && docker compose up --build"
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.3.4",
@@ -22,6 +21,8 @@
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
     "@stripe/stripe-js": "^9.5.0",
+    "@types/pdfkit": "^0.17.6",
+    "better-sqlite3": "^12.10.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "docx": "^9.6.1",
@@ -29,6 +30,7 @@
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.16.0",
     "next": "^16.2.6",
+    "pdfkit": "^0.18.0",
     "postgres": "^3.4.9",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
@@ -38,6 +40,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

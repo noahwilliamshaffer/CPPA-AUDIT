@@ -3,30 +3,31 @@
 /**
  * ReportActions — client component for Document A / Document B generation.
  *
- * Calls POST /api/reports/generate with the chosen reportType, receives the
- * DOCX binary stream, and triggers a browser download. Shows per-button
- * loading and success states.
+ * Calls POST /api/reports/generate with the chosen reportType and format,
+ * receives the binary stream, and triggers a browser download.
+ * Shows per-button loading and success states.
  */
 
 import { useState } from 'react';
-import { Download, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Download, Loader2, CheckCircle2, AlertCircle, FileText, FileType2 } from 'lucide-react';
 
 type ReportType = 'audit_report' | 'executive_certification';
+type Format = 'pdf' | 'docx';
 type BtnState = 'idle' | 'generating' | 'done' | 'error';
 
-interface ReportActionButtonProps {
+interface ReportFormatButtonProps {
   reportType: ReportType;
-  label: string;
+  format: Format;
   disabled?: boolean;
   disabledReason?: string;
 }
 
-export function ReportActionButton({
+function ReportFormatButton({
   reportType,
-  label,
+  format,
   disabled = false,
   disabledReason,
-}: ReportActionButtonProps) {
+}: ReportFormatButtonProps) {
   const [state, setState] = useState<BtnState>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -40,7 +41,7 @@ export function ReportActionButton({
       const res = await fetch('/api/reports/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reportType }),
+        body: JSON.stringify({ reportType, format }),
       });
 
       if (!res.ok) {
@@ -51,7 +52,8 @@ export function ReportActionButton({
       // Extract filename from Content-Disposition header
       const disposition = res.headers.get('Content-Disposition') ?? '';
       const match = disposition.match(/filename="([^"]+)"/);
-      const filename = match?.[1] ?? `ShieldAudit-${reportType}.docx`;
+      const defaultExt = format === 'pdf' ? 'pdf' : 'docx';
+      const filename = match?.[1] ?? `ShieldAudit-${reportType}.${defaultExt}`;
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -75,24 +77,27 @@ export function ReportActionButton({
   }
 
   const isDisabled = disabled || state === 'generating';
+  const isPdf = format === 'pdf';
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1">
       <button
         onClick={handleGenerate}
         disabled={isDisabled}
-        title={disabled ? disabledReason : undefined}
+        title={disabled ? disabledReason : `Download ${format.toUpperCase()}`}
         aria-disabled={isDisabled}
         className={`
-          inline-flex flex-shrink-0 items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold
-          transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400
+          inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold
+          transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400
           ${isDisabled
-            ? 'cursor-not-allowed bg-teal-400/10 text-teal-400/40'
+            ? 'cursor-not-allowed opacity-40 bg-navy-700 text-slate-500'
             : state === 'done'
-            ? 'bg-score-green/20 text-score-green cursor-default'
+            ? 'bg-green-500/20 text-green-400 cursor-default'
             : state === 'error'
-            ? 'bg-score-red/20 text-score-red cursor-default'
-            : 'bg-teal-400/20 text-teal-400 hover:bg-teal-400/30 cursor-pointer'
+            ? 'bg-red-500/20 text-red-400 cursor-default'
+            : isPdf
+            ? 'bg-teal-400/20 text-teal-400 hover:bg-teal-400/30 cursor-pointer border border-teal-400/30'
+            : 'bg-slate-600/30 text-slate-300 hover:bg-slate-600/50 cursor-pointer border border-slate-600/50'
           }
         `}
       >
@@ -102,8 +107,10 @@ export function ReportActionButton({
           <CheckCircle2 size={13} aria-hidden="true" />
         ) : state === 'error' ? (
           <AlertCircle size={13} aria-hidden="true" />
+        ) : isPdf ? (
+          <FileText size={13} aria-hidden="true" />
         ) : (
-          <Download size={13} aria-hidden="true" />
+          <FileType2 size={13} aria-hidden="true" />
         )}
         {state === 'generating'
           ? 'Generating…'
@@ -111,12 +118,72 @@ export function ReportActionButton({
           ? 'Downloaded!'
           : state === 'error'
           ? 'Failed'
-          : label}
+          : `Download ${format.toUpperCase()}`}
       </button>
 
       {state === 'error' && errorMsg && (
-        <p className="text-xs text-score-red leading-snug max-w-xs">{errorMsg}</p>
+        <p className="text-xs text-red-400 leading-snug max-w-xs">{errorMsg}</p>
       )}
     </div>
+  );
+}
+
+// ── Public exports ─────────────────────────────────────────────────────────────
+
+interface ReportActionButtonProps {
+  reportType: ReportType;
+  label?: string;
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
+/**
+ * Shows PDF + DOCX download buttons for a report type.
+ * The PDF button is primary (prominent); DOCX is secondary.
+ */
+export function ReportActionButton({
+  reportType,
+  disabled = false,
+  disabledReason,
+}: ReportActionButtonProps) {
+  return (
+    <div className="flex flex-col gap-2">
+      <ReportFormatButton
+        reportType={reportType}
+        format="pdf"
+        disabled={disabled}
+        disabledReason={disabledReason}
+      />
+      <ReportFormatButton
+        reportType={reportType}
+        format="docx"
+        disabled={disabled}
+        disabledReason={disabledReason}
+      />
+    </div>
+  );
+}
+
+/**
+ * Legacy single-format button (kept for backwards compat).
+ */
+export function SingleFormatButton({
+  reportType,
+  format,
+  disabled = false,
+  disabledReason,
+}: {
+  reportType: ReportType;
+  format: Format;
+  disabled?: boolean;
+  disabledReason?: string;
+}) {
+  return (
+    <ReportFormatButton
+      reportType={reportType}
+      format={format}
+      disabled={disabled}
+      disabledReason={disabledReason}
+    />
   );
 }

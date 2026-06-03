@@ -1,9 +1,2 @@
-import { SignUp } from '@clerk/nextjs';
-
-export default function SignUpPage() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-navy-700">
-      <SignUp />
-    </main>
-  );
-}
+import { redirect } from 'next/navigation';
+export default function SignUpPage() { redirect('/onboarding'); }

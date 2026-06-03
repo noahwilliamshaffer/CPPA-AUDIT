@@ -14,7 +14,7 @@
  * entry point and orientation screen for now.
  */
 
-import { auth } from '@clerk/nextjs/server';
+
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -80,8 +80,7 @@ async function fetchEligibilityStatus(clerkUserId: string): Promise<EligibilityS
 // ---------------------------------------------------------------------------
 
 export default async function EligibilityPage() {
-  const { userId } = await auth();
-  if (!userId) redirect('/sign-in');
+  const userId = 'local-user';
 
   // Attempt to fetch prior screener result; gracefully degrade if DB is down.
   let eligibilityStatus: EligibilityStatus = {
