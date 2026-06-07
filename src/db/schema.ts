@@ -113,10 +113,14 @@ export const questions = sqliteTable('questions', {
   componentNumber: integer('component_number').notNull(),
   questionText: text('question_text').notNull(),
   riskWeight: text('risk_weight').notNull(), // 'critical' | 'high' | 'medium' | 'low'
-  nistCsfMapping: text('nist_csf_mapping'),
+  nistCsfMapping: text('nist_csf_mapping'),         // CSF 2.0 subcategory (e.g. 'PR.AA-01, PR.AA-03')
   cisControlMapping: text('cis_control_mapping'),
-  parentQuestionId: text('parent_question_id'),
-  triggerCondition: text('trigger_condition', { mode: 'json' }),
+  nist80053Mapping: text('nist_800_53_mapping'),    // NIST SP 800-53 Rev 5 controls (e.g. 'IA-2, IA-2(1)')
+  parentQuestionId: text('parent_question_id'),     // code of the parent question for conditionals (e.g. 'Q-01')
+  triggerCondition: text('trigger_condition', { mode: 'json' }), // { showWhen: string[] } — parent responses that reveal this child
+  answerType: text('answer_type').notNull().default('yes_partial_no_na'),
+  // 'yes_partial_no_na' | 'yes_no' | 'yes_no_na' | 'open_text' | 'choice'
+  options: text('options', { mode: 'json' }),       // [{ value, label }] for 'choice' / extra-option questions
   displayOrder: integer('display_order').notNull(),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
   // Remediation guidance — shown on scoring page for partial/no answers
@@ -134,9 +138,16 @@ export const answers = sqliteTable(
     questionId: text('question_id').notNull().references(() => questions.id),
     orgId: text('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
     auditorId: text('auditor_id').notNull(),
-    response: text('response').notNull(), // 'yes' | 'partial' | 'no' | 'not_applicable'
+    response: text('response').notNull(), // 'yes'|'partial'|'no'|'not_applicable' | custom token | 'open_text'
     auditorNotes: text('auditor_notes'),
+    responseText: text('response_text'),  // free-text answer for open_text questions (e.g. Q-01a)
     updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+    // ── AI-generated answer metadata ──────────────────────────────────────────
+    // Set when answer is filled by AI; cleared when a human clicks a response.
+    aiGenerated: integer('ai_generated', { mode: 'boolean' }).notNull().default(false),
+    aiConfidence: text('ai_confidence'),       // 'high' | 'medium' | 'low' | null
+    aiReasoning: text('ai_reasoning'),          // 1-2 sentence explanation from Claude
+    needsClientReview: integer('needs_client_review', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => ({
     assessmentQuestionIdx: uniqueIndex('answers_assessment_question_idx').on(
@@ -260,6 +271,52 @@ export const reports = sqliteTable('reports', {
 });
 
 // ---------------------------------------------------------------------------
+// document_uploads — Client-uploaded SSPs and policy documents for AI analysis.
+// ---------------------------------------------------------------------------
+export const documentUploads = sqliteTable('document_uploads', {
+  id:                  text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  assessmentId:        text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
+  orgId:               text('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  fileName:            text('file_name').notNull(),
+  filePath:            text('file_path').notNull(),            // absolute local filesystem path
+  fileType:            text('file_type').notNull(),             // 'pdf' | 'docx' | 'txt' | 'md'
+  fileSizeBytes:       integer('file_size_bytes').notNull(),
+  uploadedAt:          integer('uploaded_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  uploadedBy:          text('uploaded_by').notNull(),
+  extractedText:       text('extracted_text'),                  // full parsed text (capped at 100K chars)
+  readabilityScore:    integer('readability_score'),            // 0–100, set after AI analysis
+  readabilityNotes:    text('readability_notes'),               // AI notes on readability
+  simplifiedSummary:   text('simplified_summary'),              // AI-generated plain-language summary
+  nistControlsCovered: text('nist_controls_covered'),           // JSON: string[] of 800-53 family codes
+  analysisStatus:      text('analysis_status').notNull().default('pending'),
+  // 'pending' | 'processing' | 'complete' | 'error'
+  analysisError:       text('analysis_error'),
+});
+
+// ---------------------------------------------------------------------------
+// ai_autofill_sessions — ADD-17 AI document ingestion + assessment autofill.
+// One row per autofill attempt for an assessment. Uploaded documents are
+// processed in-memory and discarded; only name/type/size metadata persists.
+// ---------------------------------------------------------------------------
+export const aiAutofillSessions = sqliteTable('ai_autofill_sessions', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
+  orgId: text('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('pending'),
+  // 'pending' | 'processing' | 'complete' | 'failed' | 'skipped'
+  documentsUploaded: text('documents_uploaded', { mode: 'json' }).notNull().$defaultFn(() => []),
+  // [{ name, type, sizeKb, uploadedAt }]
+  nistSummaryText: text('nist_summary_text'),         // JSON string of the Call-1 control-family summary
+  autofillResults: text('autofill_results', { mode: 'json' }).notNull().$defaultFn(() => []),
+  // [{ questionId, suggestedAnswer, confidence, reasoning, sourceDocuments, needsReview }]
+  auditorReviewedAt: integer('auditor_reviewed_at', { mode: 'timestamp' }),
+  auditorAcceptedCount: integer('auditor_accepted_count').notNull().default(0),
+  auditorOverriddenCount: integer('auditor_overridden_count').notNull().default(0),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+});
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 
@@ -289,4 +346,28 @@ export const assessmentsRelations = relations(assessments, ({ one, many }) => ({
     references: [admtAssessments.assessmentId],
   }),
   reports: many(reports),
+  documentUploads: many(documentUploads),
+  aiAutofillSessions: many(aiAutofillSessions),
+}));
+
+export const documentUploadsRelations = relations(documentUploads, ({ one }) => ({
+  assessment: one(assessments, {
+    fields: [documentUploads.assessmentId],
+    references: [assessments.id],
+  }),
+  organization: one(organizations, {
+    fields: [documentUploads.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const aiAutofillSessionsRelations = relations(aiAutofillSessions, ({ one }) => ({
+  assessment: one(assessments, {
+    fields: [aiAutofillSessions.assessmentId],
+    references: [assessments.id],
+  }),
+  organization: one(organizations, {
+    fields: [aiAutofillSessions.orgId],
+    references: [organizations.id],
+  }),
 }));

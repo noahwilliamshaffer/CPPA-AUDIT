@@ -27,6 +27,11 @@ const POINTS: Record<string, number | null> = {
   not_applicable: null,
 };
 
+// Only these answer types contribute to a component score. Gate questions
+// (yes_no, e.g. "do you use ADMT?"), open_text, and choice questions are
+// informational and excluded — scoring them as pass/fail would be meaningless.
+const SCORED_ANSWER_TYPES = new Set(['yes_partial_no_na', 'yes_no_na']);
+
 function trafficLight(score: number): 'green' | 'yellow' | 'red' {
   if (score >= 80) return 'green';
   if (score >= 50) return 'yellow';
@@ -65,6 +70,7 @@ export async function POST() {
     .select({
       componentNumber: questions.componentNumber,
       riskWeight: questions.riskWeight,
+      answerType: questions.answerType,
       response: answers.response,
     })
     .from(answers)
@@ -74,13 +80,16 @@ export async function POST() {
   // Aggregate per component
   const componentMap = new Map<number, { weightedPoints: number; maxWeightedPoints: number }>();
   for (const row of rows) {
+    // Skip gate / open-text / choice questions — they don't score.
+    if (!SCORED_ANSWER_TYPES.has(row.answerType ?? 'yes_partial_no_na')) continue;
+
     const mult = WEIGHT[row.riskWeight] ?? 1;
     const pts = POINTS[row.response];
     if (!componentMap.has(row.componentNumber)) {
       componentMap.set(row.componentNumber, { weightedPoints: 0, maxWeightedPoints: 0 });
     }
     const comp = componentMap.get(row.componentNumber)!;
-    if (pts !== null) {
+    if (pts !== null && pts !== undefined) {
       comp.weightedPoints += pts * mult;
       comp.maxWeightedPoints += 100 * mult;
     }

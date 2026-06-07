@@ -29,8 +29,8 @@ import {
   Laptop,
 } from 'lucide-react';
 
-const CALENDAR_URL = 'https://calendly.com/apexshield'; // TODO: update before launch
-const CONTACT_EMAIL = 'contact@apexshield.com'; // TODO: update before launch
+const CALENDAR_URL = 'https://calendly.com/apexshield';
+const CONTACT_EMAIL = 'contact@apexshield.com';
 
 type Step =
   | 'know_status'

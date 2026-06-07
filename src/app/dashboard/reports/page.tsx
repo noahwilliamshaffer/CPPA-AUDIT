@@ -258,8 +258,8 @@ function UnlockedView({
           Generate your CPPA submission documents — Document A (Audit Report,{' '}
           <span className="font-mono text-xs text-slate-300">§7123(d)</span>) and
           Document B (Executive Certification,{' '}
-          <span className="font-mono text-xs text-slate-300">§7122(a)(5)</span>).
-          Both must be retained for 5 years.
+          <span className="font-mono text-xs text-slate-300">§7122(a)(5)</span>), plus
+          Document C (AI-drafted System Security Plan). All must be retained for 5 years.
         </p>
       </div>
 
@@ -283,6 +283,9 @@ function UnlockedView({
       <div className="mb-6 max-w-2xl space-y-4">
         {DOCUMENT_TYPES.map((doc) => {
           const priorReport = existingReports.find((r) => r.type === doc.type);
+          // The SSP is a working deliverable — available as soon as Module 4 is
+          // unlocked (scores calculated), not gated behind payment like A/B.
+          const isSsp = doc.type === 'ssp';
 
           return (
             <div
@@ -318,8 +321,9 @@ function UnlockedView({
 
                 {/* PDF + DOCX download buttons */}
                 <ReportActionButton
-                  reportType={doc.type as 'audit_report' | 'executive_certification'}
-                  disabled={!isComplete}
+                  reportType={doc.type as 'audit_report' | 'executive_certification' | 'ssp'}
+                  endpoint={isSsp ? '/api/ssp/generate' : '/api/reports/generate'}
+                  disabled={isSsp ? false : !isComplete}
                   disabledReason={
                     isPendingPayment
                       ? 'Complete payment to generate documents'
@@ -398,6 +402,13 @@ const DOCUMENT_TYPES: Array<{
     description:
       'Signed certification by the executive officer responsible for the business\'s cybersecurity program, affirming the audit was conducted in accordance with §7122–§7123.',
     regulation: 'Cal. Code Regs. tit. 11, §7122(a)(5)',
+  },
+  {
+    type: 'ssp',
+    title: 'Document C — System Security Plan',
+    description:
+      'AI-drafted System Security Plan: an executive overview plus a narrative for each §7123(c) component (and ADMT) describing implemented controls and remediation gaps, drawn from the audit answers and NIST 800-53 summary. Available once scores are calculated; review before use.',
+    regulation: 'Cal. Code Regs. tit. 11, §7123 · NIST SP 800-53 Rev 5',
   },
 ];
 

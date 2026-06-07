@@ -17,7 +17,7 @@ const nextConfig = {
   // Marking pdfkit as external preserves its real __dirname (/app/node_modules).
   // docx is also excluded: it uses Node.js crypto at module-init time, which
   // triggers an assertion failure on Windows Node.js 20 during build workers.
-  serverExternalPackages: ['pdfkit', 'docx', 'better-sqlite3'],
+  serverExternalPackages: ['pdfkit', 'docx', 'better-sqlite3', 'pdf-parse', 'mammoth', '@anthropic-ai/sdk'],
 };
 
 export default nextConfig;

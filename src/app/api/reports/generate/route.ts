@@ -125,15 +125,21 @@ export async function POST(req: NextRequest) {
   // ── Answers + question text ──────────────────────────────────────────────
   const answerRows = await db
     .select({
+      questionId: questions.id,
       componentNumber: questions.componentNumber,
       questionText: questions.questionText,
       riskWeight: questions.riskWeight,
       response: answers.response,
       auditorNotes: answers.auditorNotes,
+      aiGenerated: answers.aiGenerated,
+      aiConfidence: answers.aiConfidence,
     })
     .from(answers)
     .innerJoin(questions, eq(answers.questionId, questions.id))
     .where(and(eq(answers.assessmentId, assessmentId), eq(answers.orgId, orgId)));
+
+  // Total questions in the bank (for the AI-assisted footnote denominator)
+  const totalQuestionRows = await db.select({ id: questions.id }).from(questions);
 
   // Group answers by component
   const answersByComponent = new Map<number, typeof answerRows>();
@@ -144,8 +150,8 @@ export async function POST(req: NextRequest) {
     answersByComponent.get(row.componentNumber)!.push(row);
   }
 
-  // Build component data array (1–18)
-  const components = Array.from({ length: 18 }, (_, i) => {
+  // Build component data array (1–18 §7123(c) components + 19 = ADMT sub-assessment)
+  const components = Array.from({ length: 19 }, (_, i) => {
     const num = i + 1;
     const s = scoreMap.get(num) ?? null;
     return {
@@ -153,13 +159,24 @@ export async function POST(req: NextRequest) {
       score: s?.score ?? null,
       status: (s?.status ?? null) as 'green' | 'yellow' | 'red' | null,
       answers: (answersByComponent.get(num) ?? []).map((a) => ({
+        questionId: a.questionId,
         questionText: a.questionText,
         riskWeight: a.riskWeight,
         response: a.response,
         auditorNotes: a.auditorNotes ?? null,
+        aiAssisted: !!a.aiGenerated,
+        aiConfidence: a.aiConfidence ?? null,
       })),
     };
   });
+
+  // AI-assisted summary for the Document A footnote
+  const aiAssistedIds = answerRows.filter((a) => a.aiGenerated).map((a) => a.questionId);
+  const aiAssisted = {
+    count: aiAssistedIds.length,
+    total: totalQuestionRows.length,
+    questionIds: aiAssistedIds,
+  };
 
   const generatedAt = new Date().toLocaleDateString('en-US', {
     year: 'numeric',
@@ -197,6 +214,7 @@ export async function POST(req: NextRequest) {
         auditPeriodEnd,
         generatedAt,
         components,
+        aiAssisted,
       });
       fileName = `ShieldAudit-Report-A-${slug}-${auditPeriodEnd ?? 'undated'}.pdf`;
     } else {
@@ -228,6 +246,7 @@ export async function POST(req: NextRequest) {
         auditPeriodEnd,
         generatedAt,
         components,
+        aiAssisted,
       });
       fileName = `ShieldAudit-Report-A-${slug}-${auditPeriodEnd ?? 'undated'}.docx`;
     } else {

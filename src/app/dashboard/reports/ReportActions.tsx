@@ -11,13 +11,14 @@
 import { useState } from 'react';
 import { Download, Loader2, CheckCircle2, AlertCircle, FileText, FileType2 } from 'lucide-react';
 
-type ReportType = 'audit_report' | 'executive_certification';
+type ReportType = 'audit_report' | 'executive_certification' | 'ssp';
 type Format = 'pdf' | 'docx';
 type BtnState = 'idle' | 'generating' | 'done' | 'error';
 
 interface ReportFormatButtonProps {
   reportType: ReportType;
   format: Format;
+  endpoint?: string;
   disabled?: boolean;
   disabledReason?: string;
 }
@@ -25,6 +26,7 @@ interface ReportFormatButtonProps {
 function ReportFormatButton({
   reportType,
   format,
+  endpoint = '/api/reports/generate',
   disabled = false,
   disabledReason,
 }: ReportFormatButtonProps) {
@@ -38,7 +40,7 @@ function ReportFormatButton({
     setErrorMsg(null);
 
     try {
-      const res = await fetch('/api/reports/generate', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reportType, format }),
@@ -132,6 +134,7 @@ function ReportFormatButton({
 
 interface ReportActionButtonProps {
   reportType: ReportType;
+  endpoint?: string;
   label?: string;
   disabled?: boolean;
   disabledReason?: string;
@@ -143,6 +146,7 @@ interface ReportActionButtonProps {
  */
 export function ReportActionButton({
   reportType,
+  endpoint,
   disabled = false,
   disabledReason,
 }: ReportActionButtonProps) {
@@ -151,12 +155,14 @@ export function ReportActionButton({
       <ReportFormatButton
         reportType={reportType}
         format="pdf"
+        endpoint={endpoint}
         disabled={disabled}
         disabledReason={disabledReason}
       />
       <ReportFormatButton
         reportType={reportType}
         format="docx"
+        endpoint={endpoint}
         disabled={disabled}
         disabledReason={disabledReason}
       />

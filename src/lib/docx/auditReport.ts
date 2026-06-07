@@ -28,10 +28,13 @@ import { AUDIT_COMPONENTS } from '@/lib/components';
 // ---------------------------------------------------------------------------
 
 export interface ComponentAnswerData {
+  questionId?: string;
   questionText: string;
   riskWeight: string;
   response: string;
   auditorNotes: string | null;
+  aiAssisted?: boolean;
+  aiConfidence?: string | null;
 }
 
 export interface ComponentReportData {
@@ -41,6 +44,12 @@ export interface ComponentReportData {
   answers: ComponentAnswerData[];
 }
 
+export interface AiAssistedSummary {
+  count: number;
+  total: number;
+  questionIds: string[];
+}
+
 export interface AuditReportInput {
   orgName: string;
   legalEntity: string;
@@ -48,6 +57,7 @@ export interface AuditReportInput {
   auditPeriodEnd: string;
   generatedAt: string;
   components: ComponentReportData[];
+  aiAssisted?: AiAssistedSummary;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +248,7 @@ function buildExecutiveSummary(
     body(
       `This report presents the results of the cybersecurity audit conducted for ${
         'the above organization'
-      } pursuant to Cal. Code Regs. tit. 11, §7123. The audit assessed compliance across all eighteen (18) cybersecurity components enumerated in §7123(c), evaluating the adequacy of the organization's cybersecurity program for protection of personal information as defined in Cal. Civ. Code §1798.81.5(d).`
+      } pursuant to Cal. Code Regs. tit. 11, §7123. The audit assessed compliance across all eighteen (18) cybersecurity components enumerated in §7123(c), plus the Automated Decision-Making Technology (ADMT) sub-assessment (§7200–7222), evaluating the adequacy of the organization's cybersecurity program for protection of personal information as defined in Cal. Civ. Code §1798.81.5(d).`
     ),
     spacer(),
     new Paragraph({
@@ -342,7 +352,7 @@ function buildComponentFindings(components: ComponentReportData[]): Paragraph[] 
     const scoreText = comp.score !== null ? `${comp.score}/100 — ${statusLabel(comp.status)}` : 'Not Scored';
 
     out.push(
-      heading2(`§7123(c)(${comp.number}) — ${def.title}`),
+      heading2(`${def.citation} — ${def.title}`),
       new Paragraph({
         children: [
           new TextRun({ text: 'Description: ', bold: true }),
@@ -378,6 +388,9 @@ function buildComponentFindings(components: ComponentReportData[]): Paragraph[] 
               new TextRun({ text: responseLabel(ans.response) }),
               new TextRun({ text: `  |  Weight: `, color: '888888' }),
               new TextRun({ text: weightLabel(ans.riskWeight), color: '888888' }),
+              ...(ans.aiAssisted
+                ? [new TextRun({ text: '  (AI-assisted, auditor reviewed)', italics: true, color: '2DA89E' })]
+                : []),
             ],
             spacing: { after: 40 },
             indent: { left: 360 },
@@ -494,6 +507,26 @@ function buildRegulatoryRefs(): Paragraph[] {
 }
 
 // ---------------------------------------------------------------------------
+// AI-assisted responses footnote (ADD-17)
+// ---------------------------------------------------------------------------
+
+function buildAiAssistedNote(ai?: AiAssistedSummary): Paragraph[] {
+  if (!ai || ai.count === 0) return [];
+  return [
+    pageBreak(),
+    heading1('Appendix: AI-Assisted Responses'),
+    body(
+      `${ai.count} of ${ai.total} questions in this assessment were pre-filled using AI document analysis and subsequently reviewed and accepted or overridden by the auditor.`
+    ),
+    body(`The following questions received AI-assisted answers: ${ai.questionIds.join(', ')}.`),
+    body('All AI-generated answers were reviewed and certified by the auditor of record.', {
+      italic: true,
+      color: '555555',
+    }),
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
@@ -519,12 +552,13 @@ export async function generateAuditReportDocx(input: AuditReportInput): Promise<
             input.auditPeriodEnd,
             input.generatedAt
           ),
-          ...buildExecutiveSummary(overallScore, scoredComponents.length, 18),
+          ...buildExecutiveSummary(overallScore, scoredComponents.length, input.components.length),
           buildScoresTable(input.components),
           spacer(),
           ...buildComponentFindings(input.components),
           ...buildMethodology(),
           ...buildRegulatoryRefs(),
+          ...buildAiAssistedNote(input.aiAssisted),
         ],
       },
     ],
