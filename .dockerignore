@@ -32,3 +32,13 @@ Thumbs.db
 # Logs
 *.log
 dev-server*.log
+
+# Local SQLite database (runtime data lives in the /data volume, not the image)
+*.db
+*.db-shm
+*.db-wal
+
+# Agent / tooling scratch + demo assets (not needed in the runtime image)
+.claude
+demo
+*.tgz

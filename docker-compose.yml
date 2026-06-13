@@ -1,83 +1,47 @@
 # =============================================================================
-# ShieldAudit — Self-Contained Client Deployment
+# ShieldAudit — self-contained deployment (offline SQLite)
 #
-# Both the app AND the database run locally on your machine.
-# All audit data is stored in the 'shieldaudit_db' Docker volume — it NEVER
-# leaves your machine or touches any external server.
+# One container. No external database, no cloud. All audit data lives in the
+# 'shieldaudit_data' Docker volume on this machine and never leaves it.
 #
-# ── Quick start ────────────────────────────────────────────────────────────
-#   1. cp .env.client.example .env.client
-#   2. Fill in your Clerk keys in .env.client  (only thing required)
-#   3. docker compose up --build
-#   4. Open http://localhost:3000
-#   The database schema and question bank are set up automatically.
+# Quick start:
+#   docker compose up --build         (or run ./start.sh / .\start.ps1)
+#   open http://localhost:3000
 #
-# ── Data persistence ───────────────────────────────────────────────────────
-#   All data lives in the 'shieldaudit_db' named Docker volume on this machine.
+# Real AI autofill (optional): create a .env file with ANTHROPIC_API_KEY=sk-ant-...
+# Without it, the app runs in mock mode (STORAGE_MODE=mock) with no API calls.
 #
-#   Backup:   docker run --rm -v shieldaudit_cppa_db:/data -v $(pwd):/out \
-#               alpine tar czf /out/shieldaudit-backup.tar.gz -C /data .
-#   Restore:  docker run --rm -v shieldaudit_cppa_db:/data -v $(pwd):/out \
-#               alpine tar xzf /out/shieldaudit-backup.tar.gz -C /data
-#   Wipe:     docker compose down -v   ← WARNING: deletes ALL audit data
-#
-# ── Updates ────────────────────────────────────────────────────────────────
-#   docker compose pull && docker compose up --build
-#   Database schema migrations run automatically on every startup.
+# Backup:  docker run --rm -v shieldaudit_data:/data -v ${PWD}:/out alpine tar czf /out/shieldaudit-backup.tar.gz -C /data .
+# Wipe:    docker compose down -v     (WARNING: deletes all audit data)
 # =============================================================================
 
 services:
-
-  # ── PostgreSQL 16 (local, private) ─────────────────────────────────────────
-  # Stores all audit data on this machine. Never exposes data externally.
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: shieldaudit
-      POSTGRES_USER: shieldaudit
-      POSTGRES_PASSWORD: shieldaudit_internal_pw
-    volumes:
-      - shieldaudit_cppa_db:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U shieldaudit -d shieldaudit"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-    # Port 5432 is NOT exposed to the host — database is container-internal only.
-    # Uncomment to connect with a local DB client (psql, DBeaver, etc.):
-    # ports: ["5432:5432"]
-
-  # ── ShieldAudit Application ─────────────────────────────────────────────────
   app:
     build:
       context: .
-      # NEXT_PUBLIC_* vars must be baked in at build time — Next.js inlines them.
-      # Update these if you change your Clerk app or redirect URLs.
-      args:
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_ZW5hYmxlZC1lZWwtOTguY2xlcmsuYWNjb3VudHMuZGV2JA
-        NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
-        NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
-        NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: /dashboard
-        NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: /onboarding
+      dockerfile: Dockerfile
+    image: shieldaudit:latest
     restart: unless-stopped
     ports:
       - "3000:3000"
-    depends_on:
-      db:
-        condition: service_healthy
-    env_file:
-      - .env.client
     environment:
-      # Internal DB URL — always points to the local 'db' container above.
-      # Overrides any DATABASE_URL set in .env.client.
-      DATABASE_URL: postgresql://shieldaudit:shieldaudit_internal_pw@db:5432/shieldaudit
-      # Feature flags — clients don't need S3 or Stripe in mock mode.
-      STORAGE_MODE: mock
-      STRIPE_MODE: mock
+      DATABASE_PATH: /data/shieldaudit.db
+      STORAGE_MODE: ${STORAGE_MODE:-mock}
+      STRIPE_MODE: ${STRIPE_MODE:-mock}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       NEXT_PUBLIC_APP_URL: http://localhost:3000
+      # Integrations (all optional — set in a .env file to enable)
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
+      JIRA_EMAIL: ${JIRA_EMAIL:-}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+      JIRA_PROJECT_KEY: ${JIRA_PROJECT_KEY:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL:-}
+      WEBHOOK_URL: ${WEBHOOK_URL:-}
+    volumes:
+      - shieldaudit_data:/data
 
 volumes:
-  shieldaudit_cppa_db:
+  shieldaudit_data:
     driver: local
