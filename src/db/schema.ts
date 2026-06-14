@@ -317,6 +317,17 @@ export const aiAutofillSessions = sqliteTable('ai_autofill_sessions', {
 });
 
 // ---------------------------------------------------------------------------
+// app_settings — instance-level configuration (integration tokens, AI key).
+// Secret values are encrypted at rest; see src/lib/settings/crypto.ts.
+// ---------------------------------------------------------------------------
+export const appSettings = sqliteTable('app_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  isSecret: integer('is_secret', { mode: 'boolean' }).notNull().default(false),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+});
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 

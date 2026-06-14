@@ -16,11 +16,11 @@ import 'server-only';
 import type Anthropic from '@anthropic-ai/sdk';
 import {
   getAnthropic,
-  AUTOFILL_MODEL,
   MAX_TOKENS_SUMMARY,
   MAX_TOKENS_AUTOFILL,
   MAX_TOKENS_READABILITY,
 } from '@/lib/anthropic';
+import { getEffectiveAnthropicKey, getEffectiveAnthropicModel } from '@/lib/integrations/config';
 
 type MessageContent = Anthropic.MessageParam['content'];
 
@@ -75,8 +75,9 @@ export interface ReadabilityResult {
 
 const SCORED_TYPES = new Set(['yes_partial_no_na', 'yes_no', 'yes_no_na']);
 
-function isMock(): boolean {
-  return process.env.STORAGE_MODE === 'mock' || !process.env.ANTHROPIC_API_KEY;
+async function isMock(): Promise<boolean> {
+  if (process.env.STORAGE_MODE === 'mock') return true;
+  return !(await getEffectiveAnthropicKey());
 }
 
 // ── JSON extraction (Claude sometimes wraps in fences / prose) ───────────────
@@ -252,11 +253,12 @@ function mockReadability(documents: PipelineDocument[]): ReadabilityResult[] {
 // ── Public pipeline functions ────────────────────────────────────────────────
 
 export async function runReadabilityPrecheck(documents: PipelineDocument[]): Promise<ReadabilityResult[]> {
-  if (isMock()) return mockReadability(documents);
+  if (await isMock()) return mockReadability(documents);
 
   const client = await getAnthropic();
+  const model = await getEffectiveAnthropicModel();
   const msg = await client.messages.create({
-    model: AUTOFILL_MODEL,
+    model,
     max_tokens: MAX_TOKENS_READABILITY,
     system: READABILITY_SYSTEM,
     messages: [{ role: 'user', content: buildDocumentBlocks(documents) as unknown as MessageContent }],
@@ -270,15 +272,16 @@ export async function runAutofillPipeline(
   documents: PipelineDocument[],
   questions: QuestionForAutofill[]
 ): Promise<PipelineResult> {
-  if (isMock()) {
+  if (await isMock()) {
     return { nistSummary: mockNistSummary(documents), results: mockResults(questions) };
   }
 
   const client = await getAnthropic();
+  const model = await getEffectiveAnthropicModel();
 
   // ── Call 1 — NIST 800-53 summary ──────────────────────────────────────────
   const summaryMsg = await client.messages.create({
-    model: AUTOFILL_MODEL,
+    model,
     max_tokens: MAX_TOKENS_SUMMARY,
     system: SUMMARY_SYSTEM,
     messages: [{ role: 'user', content: buildDocumentBlocks(documents) as unknown as MessageContent }],
@@ -294,7 +297,7 @@ export async function runAutofillPipeline(
     `${buildQuestionList(questions)}`;
 
   const autofillMsg = await client.messages.create({
-    model: AUTOFILL_MODEL,
+    model,
     max_tokens: MAX_TOKENS_AUTOFILL,
     system: AUTOFILL_SYSTEM,
     messages: [{ role: 'user', content: autofillUser }],

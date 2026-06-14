@@ -40,6 +40,9 @@ next-env.d.ts
 *.db-shm
 *.db-wal
 
+# Secrets-encryption key (never commit)
+.shieldaudit.key
+
 # Generated screenshots and dev logs
 /screenshots/
 *.log

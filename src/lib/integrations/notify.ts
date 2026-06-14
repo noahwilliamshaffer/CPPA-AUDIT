@@ -31,13 +31,13 @@ async function post(url: string, payload: unknown): Promise<{ ok: boolean; error
 export async function sendNotifications(text: string, extra?: Record<string, unknown>): Promise<NotifyResult[]> {
   const results: NotifyResult[] = [];
 
-  const slack = getSlackWebhook();
+  const slack = await getSlackWebhook();
   if (slack) results.push({ channel: 'slack', ...(await post(slack, { text })) });
 
-  const teams = getTeamsWebhook();
+  const teams = await getTeamsWebhook();
   if (teams) results.push({ channel: 'teams', ...(await post(teams, { text })) });
 
-  const webhook = getGenericWebhook();
+  const webhook = await getGenericWebhook();
   if (webhook) results.push({ channel: 'webhook', ...(await post(webhook, { source: 'ShieldAudit', text, ...extra })) });
 
   return results;

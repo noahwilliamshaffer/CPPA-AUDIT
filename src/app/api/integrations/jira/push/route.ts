@@ -17,7 +17,7 @@ export const maxDuration = 120;
 export async function POST() {
   const userId = 'local-user';
 
-  const cfg = getJiraConfig();
+  const cfg = await getJiraConfig();
   if (!cfg) {
     return NextResponse.json(
       { error: 'Jira is not configured. Set JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN, and JIRA_PROJECT_KEY.' },

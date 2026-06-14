@@ -11,7 +11,8 @@
  */
 
 import 'server-only';
-import { getAnthropic, AUTOFILL_MODEL } from '@/lib/anthropic';
+import { getAnthropic } from '@/lib/anthropic';
+import { getEffectiveAnthropicKey, getEffectiveAnthropicModel } from '@/lib/integrations/config';
 
 const SSP_MAX_TOKENS = 8000;
 
@@ -49,8 +50,9 @@ export interface SspDraft {
   generatedBy: 'ai' | 'mock';
 }
 
-function isMock(): boolean {
-  return process.env.STORAGE_MODE === 'mock' || !process.env.ANTHROPIC_API_KEY;
+async function isMock(): Promise<boolean> {
+  if (process.env.STORAGE_MODE === 'mock') return true;
+  return !(await getEffectiveAnthropicKey());
 }
 
 function extractJson(raw: string): string {
@@ -149,11 +151,12 @@ export async function draftSSP(
   components: SspComponentInput[],
   nistSummaryText: string | null
 ): Promise<SspDraft> {
-  if (isMock()) return mockSSP(orgName, components);
+  if (await isMock()) return mockSSP(orgName, components);
 
   const client = await getAnthropic();
+  const model = await getEffectiveAnthropicModel();
   const msg = await client.messages.create({
-    model: AUTOFILL_MODEL,
+    model,
     max_tokens: SSP_MAX_TOKENS,
     system: SSP_SYSTEM,
     messages: [{ role: 'user', content: buildSspUser(orgName, components, nistSummaryText) }],

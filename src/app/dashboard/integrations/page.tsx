@@ -12,6 +12,7 @@ export const dynamic = 'force-dynamic';
 import { Plug, Bell, CheckCircle2, Circle, Clock, Download, Ticket } from 'lucide-react';
 import { integrationStatus } from '@/lib/integrations/config';
 import { JiraPushButton, NotifyButton } from './IntegrationActions';
+import SettingsForm from './SettingsForm';
 
 async function fetchTicketCount(userId: string): Promise<number> {
   const { db } = await import('@/db');
@@ -52,7 +53,7 @@ const ROADMAP = [
 ];
 
 export default async function IntegrationsPage() {
-  const status = integrationStatus();
+  const status = await integrationStatus();
   let ticketCount = 0;
   try { ticketCount = await fetchTicketCount('local-user'); } catch {}
   const notifierConfigured = status.slack || status.teams || status.webhook;
@@ -70,10 +71,15 @@ export default async function IntegrationsPage() {
           </div>
         </div>
         <p className="text-sm text-slate-400 leading-relaxed">
-          Push audit findings and alerts into the systems your team already uses. Configure these with environment
-          variables (e.g. in your <span className="font-mono text-xs text-slate-300">.env</span> or Docker compose) — no
-          secrets are stored in the app.
+          Push audit findings and alerts into the systems your team already uses. Enter credentials in{' '}
+          <span className="text-slate-300">Credentials</span> below — they&apos;re encrypted at rest and never shown
+          back to you — or provide them as environment variables (e.g. in your{' '}
+          <span className="font-mono text-xs text-slate-300">.env</span> or Docker compose).
         </p>
+      </div>
+
+      <div className="max-w-3xl mb-4">
+        <SettingsForm />
       </div>
 
       <div className="max-w-3xl space-y-4">
@@ -93,8 +99,8 @@ export default async function IntegrationsPage() {
           {status.jira ? (
             <JiraPushButton ticketCount={ticketCount} />
           ) : (
-            <p className="text-[11px] text-slate-500 font-mono">
-              Set JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_PROJECT_KEY
+            <p className="text-[11px] text-slate-500">
+              Enter your Jira details in <span className="text-slate-400">Credentials</span> above (or set the JIRA_* env vars).
             </p>
           )}
         </section>
@@ -118,8 +124,8 @@ export default async function IntegrationsPage() {
           {notifierConfigured ? (
             <NotifyButton />
           ) : (
-            <p className="text-[11px] text-slate-500 font-mono">
-              Set SLACK_WEBHOOK_URL, TEAMS_WEBHOOK_URL, and/or WEBHOOK_URL
+            <p className="text-[11px] text-slate-500">
+              Add a webhook URL in <span className="text-slate-400">Credentials</span> above (or set the *_WEBHOOK_URL env vars).
             </p>
           )}
         </section>

@@ -15,7 +15,7 @@ export const runtime = 'nodejs';
 export async function POST() {
   const userId = 'local-user';
 
-  if (!anyNotifierConfigured()) {
+  if (!(await anyNotifierConfigured())) {
     return NextResponse.json(
       { error: 'No notifier configured. Set SLACK_WEBHOOK_URL, TEAMS_WEBHOOK_URL, or WEBHOOK_URL.' },
       { status: 400 }

@@ -38,6 +38,9 @@ dev-server*.log
 *.db-shm
 *.db-wal
 
+# Local secrets-encryption key (must never be baked into the image)
+.shieldaudit.key
+
 # Agent / tooling scratch + demo assets (not needed in the runtime image)
 .claude
 demo

@@ -8,5 +8,5 @@ import { integrationStatus } from '@/lib/integrations/config';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  return NextResponse.json(integrationStatus());
+  return NextResponse.json(await integrationStatus());
 }
