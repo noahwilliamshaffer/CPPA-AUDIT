@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, CheckCircle2, ArrowUpRight, Send } from 'lucide-react';
+import { Loader2, CheckCircle2, ArrowUpRight, Send, FileText, UploadCloud } from 'lucide-react';
 
 type BtnState = 'idle' | 'busy' | 'done' | 'error';
 
@@ -52,6 +52,39 @@ export function JiraPushButton({ ticketCount }: { ticketCount: number }) {
       <ActionResult state={state} msg={msg} />
     </div>
   );
+}
+
+function PublishButton({ endpoint, label, icon }: { endpoint: string; label: string; icon: React.ReactNode }) {
+  const { state, msg, run } = useAction(endpoint, (d) => {
+    if (typeof d.url === 'string') return `Published — ${d.url}`;
+    if (typeof d.count === 'number') return `Uploaded ${d.count} file(s).`;
+    return 'Done.';
+  });
+  return (
+    <div>
+      <button
+        onClick={run}
+        disabled={state === 'busy'}
+        className="inline-flex items-center gap-2 rounded-lg bg-teal-400 px-4 py-2 text-sm font-semibold text-navy-900 hover:bg-teal-300 transition-colors disabled:opacity-60"
+      >
+        {state === 'busy' ? <Loader2 size={14} className="animate-spin" /> : state === 'done' ? <CheckCircle2 size={14} /> : icon}
+        {label}
+      </button>
+      <ActionResult state={state} msg={msg} />
+    </div>
+  );
+}
+
+export function ConfluencePublishButton() {
+  return <PublishButton endpoint="/api/integrations/confluence/publish" label="Publish audit summary" icon={<FileText size={14} />} />;
+}
+
+export function NotionPublishButton() {
+  return <PublishButton endpoint="/api/integrations/notion/publish" label="Publish audit summary" icon={<FileText size={14} />} />;
+}
+
+export function S3UploadButton() {
+  return <PublishButton endpoint="/api/integrations/s3/upload" label="Upload to evidence locker" icon={<UploadCloud size={14} />} />;
 }
 
 export function NotifyButton() {

@@ -9,9 +9,15 @@ export const dynamic = 'force-dynamic';
  * roadmap and listed here so the direction is visible.
  */
 
-import { Plug, Bell, CheckCircle2, Circle, Clock, Download, Ticket } from 'lucide-react';
+import { Plug, Bell, CheckCircle2, Circle, Clock, Download, Ticket, FileText, Database } from 'lucide-react';
 import { integrationStatus } from '@/lib/integrations/config';
-import { JiraPushButton, NotifyButton } from './IntegrationActions';
+import {
+  JiraPushButton,
+  NotifyButton,
+  ConfluencePublishButton,
+  NotionPublishButton,
+  S3UploadButton,
+} from './IntegrationActions';
 import SettingsForm from './SettingsForm';
 
 async function fetchTicketCount(userId: string): Promise<number> {
@@ -44,12 +50,9 @@ function StatusBadge({ on }: { on: boolean }) {
 }
 
 const ROADMAP = [
-  { name: 'SSO — Okta / Microsoft Entra ID', why: 'SAML/OIDC + SCIM. Required for enterprise login; also an MFA evidence source.' },
-  { name: 'Evidence connectors — Okta, AWS, Tenable/Qualys, CrowdStrike/Intune', why: 'Pull control evidence at the source to auto-fill the audit (§7123(e) auditor-observed evidence).' },
-  { name: 'Document storage — SharePoint / Google Drive / S3', why: 'Evidence locker + 5-year retention.' },
-  { name: 'Confluence / Notion', why: 'Publish the audit report and SSP.' },
-  { name: 'GRC / privacy — OneTrust, Vanta, Drata, Secureframe', why: 'Share/ingest compliance evidence.' },
-  { name: 'e-Signature — DocuSign / Adobe Sign', why: 'Sign Document B (executive certification, §7122(a)(5)).' },
+  { name: 'Evidence auto-fill from connectors', why: 'Wire connector data (Okta/Entra, AWS, Tenable/Qualys, CrowdStrike/Intune, GRC tools) into the §7123(e) autofill pipeline so pulled evidence pre-fills answers. Connectors below already authenticate; this is the ingestion step.' },
+  { name: 'SharePoint / Google Drive storage', why: 'OAuth-based document storage for the evidence locker (S3 / S3-compatible is available today).' },
+  { name: 'SSO app login (optional, OIDC)', why: 'Offline local-user remains the default; Okta/Entra are used as MFA evidence sources (Connectors), not yet as an app-login layer.' },
 ];
 
 export default async function IntegrationsPage() {
@@ -126,6 +129,70 @@ export default async function IntegrationsPage() {
           ) : (
             <p className="text-[11px] text-slate-500">
               Add a webhook URL in <span className="text-slate-400">Credentials</span> above (or set the *_WEBHOOK_URL env vars).
+            </p>
+          )}
+        </section>
+
+        {/* Confluence */}
+        <section className="rounded-xl border border-navy-600 bg-navy-600/20 p-5">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2">
+              <FileText size={16} className="text-teal-400" />
+              <h2 className="font-sora text-sm font-semibold text-slate-100">Confluence</h2>
+            </div>
+            <StatusBadge on={status.confluence} />
+          </div>
+          <p className="text-xs text-slate-400 leading-relaxed mb-3">
+            Publish the audit summary (open remediation items, priorities, and citations) as a Confluence page in your space.
+          </p>
+          {status.confluence ? (
+            <ConfluencePublishButton />
+          ) : (
+            <p className="text-[11px] text-slate-500">
+              Enter your Confluence details in <span className="text-slate-400">Credentials</span> above (or set the CONFLUENCE_* env vars).
+            </p>
+          )}
+        </section>
+
+        {/* Notion */}
+        <section className="rounded-xl border border-navy-600 bg-navy-600/20 p-5">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2">
+              <FileText size={16} className="text-teal-400" />
+              <h2 className="font-sora text-sm font-semibold text-slate-100">Notion</h2>
+            </div>
+            <StatusBadge on={status.notion} />
+          </div>
+          <p className="text-xs text-slate-400 leading-relaxed mb-3">
+            Publish the audit summary as a Notion page under a parent page your integration can write to.
+          </p>
+          {status.notion ? (
+            <NotionPublishButton />
+          ) : (
+            <p className="text-[11px] text-slate-500">
+              Enter your Notion token + parent page ID in <span className="text-slate-400">Credentials</span> above (or set the NOTION_* env vars).
+            </p>
+          )}
+        </section>
+
+        {/* S3 evidence locker */}
+        <section className="rounded-xl border border-navy-600 bg-navy-600/20 p-5">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2">
+              <Database size={16} className="text-teal-400" />
+              <h2 className="font-sora text-sm font-semibold text-slate-100">S3 evidence locker</h2>
+            </div>
+            <StatusBadge on={status.s3} />
+          </div>
+          <p className="text-xs text-slate-400 leading-relaxed mb-3">
+            Upload the remediation tickets (JSON + CSV) to an S3 / S3-compatible bucket for the evidence locker and 5-year
+            retention (§7123). Works with AWS, Cloudflare R2, MinIO, and Wasabi.
+          </p>
+          {status.s3 ? (
+            <S3UploadButton />
+          ) : (
+            <p className="text-[11px] text-slate-500">
+              Enter your bucket + access keys in <span className="text-slate-400">Credentials</span> above (or set the S3_* env vars).
             </p>
           )}
         </section>
