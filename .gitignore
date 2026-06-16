@@ -43,6 +43,9 @@ next-env.d.ts
 # Secrets-encryption key (never commit)
 .shieldaudit.key
 
+# Evidence Locker uploads (runtime data; lives on the /data volume in Docker)
+/evidence/
+
 # Generated screenshots and dev logs
 /screenshots/
 *.log

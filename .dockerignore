@@ -41,6 +41,9 @@ dev-server*.log
 # Local secrets-encryption key (must never be baked into the image)
 .shieldaudit.key
 
+# Evidence Locker uploads (runtime data; lives on the /data volume)
+/evidence/
+
 # Agent / tooling scratch + demo assets (not needed in the runtime image)
 .claude
 demo
