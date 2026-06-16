@@ -35,6 +35,11 @@ export interface AiAssistedSummary {
   questionIds: string[];
 }
 
+export interface ReportBrand {
+  firmName?: string;
+  footer?: string;
+}
+
 export interface AuditReportInput {
   orgName: string;
   legalEntity: string | null;
@@ -43,6 +48,7 @@ export interface AuditReportInput {
   generatedAt: string;
   components: ComponentData[];
   aiAssisted?: AiAssistedSummary;
+  brand?: ReportBrand;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -140,7 +146,12 @@ export async function generateAuditReportPdf(input: AuditReportInput): Promise<B
     auditPeriodEnd,
     generatedAt,
     components,
+    brand,
   } = input;
+
+  const firm = brand?.firmName?.trim();
+  const brandLine1 = (firm || 'SHIELDAUDIT').toUpperCase();
+  const brandLine2 = firm ? brand?.footer?.trim() || '' : 'BY APEXSHIELD LLC';
 
   return new Promise<Buffer>((resolve, reject) => {
     const doc = new PDFDocument({
@@ -172,18 +183,20 @@ export async function generateAuditReportPdf(input: AuditReportInput): Promise<B
     // Teal accent line
     doc.rect(0, 200, pageW, 4).fill(COLORS.teal);
 
-    // Logo / brand
+    // Logo / brand (white-label: firm name + footer override the defaults)
     doc
       .fillColor(COLORS.teal)
       .fontSize(11)
       .font('Helvetica-Bold')
-      .text('SHIELDAUDIT', margin, 48, { characterSpacing: 3 });
+      .text(brandLine1, margin, 48, { characterSpacing: 3, width: contentW - 120 });
 
-    doc
-      .fillColor(COLORS.slateLight)
-      .fontSize(8)
-      .font('Helvetica')
-      .text('BY APEXSHIELD LLC', margin, 63, { characterSpacing: 2 });
+    if (brandLine2) {
+      doc
+        .fillColor(COLORS.slateLight)
+        .fontSize(8)
+        .font('Helvetica')
+        .text(brandLine2, margin, 63, { characterSpacing: 2, width: contentW - 120 });
+    }
 
     // Main title
     doc

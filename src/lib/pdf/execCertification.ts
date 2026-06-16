@@ -9,6 +9,7 @@
  */
 
 import PDFDocument from 'pdfkit';
+import type { ReportBrand } from './auditReport';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ export interface ExecCertificationInput {
   yellowCount: number;
   redCount: number;
   scoredComponents: number;
+  brand?: ReportBrand;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -74,7 +76,12 @@ export async function generateExecCertificationPdf(input: ExecCertificationInput
     yellowCount,
     redCount,
     scoredComponents,
+    brand,
   } = input;
+
+  const firm = brand?.firmName?.trim();
+  const brandLine1 = (firm || 'SHIELDAUDIT').toUpperCase();
+  const brandLine2 = firm ? brand?.footer?.trim() || '' : 'BY APEXSHIELD LLC';
 
   return new Promise<Buffer>((resolve, reject) => {
     const doc = new PDFDocument({
@@ -104,18 +111,20 @@ export async function generateExecCertificationPdf(input: ExecCertificationInput
     doc.rect(0, 0, pageW, 180).fill(COLORS.navy);
     doc.rect(0, 180, pageW, 3).fill(COLORS.teal);
 
-    // Logo / brand
+    // Logo / brand (white-label: firm name + footer override the defaults)
     doc
       .fillColor(COLORS.teal)
       .fontSize(10)
       .font('Helvetica-Bold')
-      .text('SHIELDAUDIT', margin, 44, { characterSpacing: 3 });
+      .text(brandLine1, margin, 44, { characterSpacing: 3, width: contentW - 110 });
 
-    doc
-      .fillColor(COLORS.slateLight)
-      .fontSize(7.5)
-      .font('Helvetica')
-      .text('BY APEXSHIELD LLC', margin, 58, { characterSpacing: 2 });
+    if (brandLine2) {
+      doc
+        .fillColor(COLORS.slateLight)
+        .fontSize(7.5)
+        .font('Helvetica')
+        .text(brandLine2, margin, 58, { characterSpacing: 2, width: contentW - 110 });
+    }
 
     // Document title
     doc

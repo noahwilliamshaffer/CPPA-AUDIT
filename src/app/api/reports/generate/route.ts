@@ -201,6 +201,14 @@ export async function POST(req: NextRequest) {
   let fileName: string;
   let contentType: string;
 
+  // White-label: firm name + footer for the PDF deliverables (Documents A & B).
+  const { getBrandConfig } = await import('@/lib/branding');
+  const brandCfg = await getBrandConfig(userId);
+  const reportBrand =
+    brandCfg.companyName || brandCfg.reportFooter
+      ? { firmName: brandCfg.companyName || undefined, footer: brandCfg.reportFooter || undefined }
+      : undefined;
+
   if (format === 'pdf') {
     // PDF generators — dynamically imported to avoid crypto init at build time
     const { generateAuditReportPdf } = await import('@/lib/pdf/auditReport');
@@ -215,6 +223,7 @@ export async function POST(req: NextRequest) {
         generatedAt,
         components,
         aiAssisted,
+        brand: reportBrand,
       });
       fileName = `ShieldAudit-Report-A-${slug}-${auditPeriodEnd ?? 'undated'}.pdf`;
     } else {
@@ -229,6 +238,7 @@ export async function POST(req: NextRequest) {
         yellowCount,
         redCount,
         scoredComponents: scoredComponents.length,
+        brand: reportBrand,
       });
       fileName = `ShieldAudit-Report-B-${slug}-${auditPeriodEnd ?? 'undated'}.pdf`;
     }
