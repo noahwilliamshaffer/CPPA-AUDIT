@@ -23,6 +23,7 @@ export interface SignInput {
   sessionToken?: string;
   body?: Buffer | string; // default ''
   headers?: Record<string, string>; // extra headers to sign (e.g. content-type)
+  date?: Date; // override the signing time (testing); defaults to now
 }
 
 function sha256Hex(data: string | Buffer): string {
@@ -43,7 +44,7 @@ export function signAwsRequest(input: SignInput): Record<string, string> {
   const body = input.body ?? '';
   const payloadHash = sha256Hex(body);
 
-  const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, ''); // YYYYMMDDTHHMMSSZ
+  const amzDate = (input.date ?? new Date()).toISOString().replace(/[:-]|\.\d{3}/g, ''); // YYYYMMDDTHHMMSSZ
   const dateStamp = amzDate.slice(0, 8);
 
   // Headers that participate in the signature (lowercased names, trimmed values).

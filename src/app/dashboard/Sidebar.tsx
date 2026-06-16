@@ -23,6 +23,7 @@ import {
   FileText,
   Ticket,
   Plug,
+  History,
   Settings,
   Lock,
   LogOut,
@@ -112,6 +113,13 @@ const NAV_ITEMS: NavItemDef[] = [
     Icon: Ticket,
     unlockedPropKey: 'module4Unlocked',
     lockedTooltip: 'Complete the Scoring Dashboard first',
+  },
+  {
+    label: 'Audit Trail',
+    href: '/dashboard/audit-trail',
+    Icon: History,
+    unlockedPropKey: null,
+    lockedTooltip: null,
   },
   {
     label: 'Integrations',
