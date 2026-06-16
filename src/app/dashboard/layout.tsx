@@ -6,6 +6,7 @@
 
 import { redirect } from 'next/navigation';
 import Sidebar from './Sidebar';
+import { getBrandConfig } from '@/lib/branding';
 
 const LOCAL_USER_ID = 'local-user';
 
@@ -85,11 +86,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect('/onboarding');
   }
 
+  let brand = { companyName: '', accentColor: '', logoUrl: '', reportFooter: '' };
+
   if (orgContext) {
     orgName = orgContext.orgName;
     userRole = orgContext.userRole;
     try {
       moduleStatus = await fetchModuleUnlockStatus(orgContext.orgId);
+    } catch {}
+    try {
+      brand = await getBrandConfig(LOCAL_USER_ID);
     } catch {}
   }
 
@@ -103,6 +109,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
         module4Unlocked={moduleStatus.module4Unlocked}
         userInitials="SA"
         userEmail="local@shieldaudit"
+        brandName={brand.companyName}
+        accentColor={brand.accentColor}
+        logoUrl={brand.logoUrl}
       />
       <main className="ml-64 flex-1 overflow-y-auto">{children}</main>
     </div>

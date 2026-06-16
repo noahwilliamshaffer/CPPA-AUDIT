@@ -16,7 +16,6 @@ export const dynamic = 'force-dynamic';
  * should never be gated behind audit progress.
  */
 
-import { redirect } from 'next/navigation';
 import {
   Settings,
   Building2,
@@ -27,6 +26,7 @@ import {
   Mail,
   BadgeCheck,
 } from 'lucide-react';
+import BrandingForm from './BrandingForm';
 
 // ---------------------------------------------------------------------------
 // Fetch org details for the current user
@@ -217,46 +217,7 @@ export default async function SettingsPage() {
             </h2>
           </div>
 
-          <div className="rounded-xl border border-navy-600 bg-navy-600/30 p-5">
-            <div className="flex items-start gap-3">
-              <Info size={15} className="mt-0.5 flex-shrink-0 text-slate-500" aria-hidden="true" />
-              <div>
-                <p className="text-sm font-semibold text-slate-400">
-                  Available in Phase 6
-                </p>
-                <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">
-                  White-label branding allows reseller organizations to substitute
-                  their firm logo, name, and brand color throughout the platform and
-                  on generated CPPA submission documents. Custom subdomain routing
-                  (e.g.,{' '}
-                  <span className="font-mono text-slate-400">yourfirm.shieldaudit.com</span>)
-                  is also included.
-                </p>
-                <div className="mt-3 space-y-1">
-                  {BRANDING_FEATURES.map((f, i) => (
-                    <div key={i} className="flex items-start gap-2 text-xs text-slate-600">
-                      <ChevronRight size={12} className="mt-0.5 flex-shrink-0 text-slate-700" aria-hidden="true" />
-                      {f}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 pt-4 border-t border-navy-700">
-              <button
-                disabled
-                className="inline-flex cursor-not-allowed items-center gap-2 rounded-lg bg-slate-500/20 px-4 py-2 text-xs font-semibold text-slate-500"
-                aria-disabled="true"
-              >
-                <Palette size={13} aria-hidden="true" />
-                Configure Branding
-                <span className="ml-0.5 rounded bg-navy-800/60 px-1.5 py-0.5 text-xs font-normal text-slate-600">
-                  Phase 6
-                </span>
-              </button>
-            </div>
-          </div>
+          <BrandingForm />
         </section>
 
         {/* ---------------------------------------------------------------- */}
@@ -368,14 +329,6 @@ function SettingsRow({
 // ---------------------------------------------------------------------------
 // Static data
 // ---------------------------------------------------------------------------
-
-const BRANDING_FEATURES: string[] = [
-  'Upload firm logo (PNG, SVG) — replaces ShieldAudit shield icon',
-  'Set firm name — appears in sidebar, report headers, and email notifications',
-  'Choose brand accent color — replaces teal-400 throughout the UI',
-  'Custom subdomain routing (e.g., yourfirm.shieldaudit.com)',
-  'White-labeled Document A and Document B PDFs with your firm branding',
-];
 
 const BILLING_FEATURES: string[] = [
   'View invoice history for all completed assessment payments',

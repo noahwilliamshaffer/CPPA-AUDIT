@@ -42,6 +42,10 @@ export interface SidebarProps {
   module4Unlocked: boolean;
   userInitials: string;
   userEmail: string;
+  // White-label branding (Phase 6) — empty values fall back to ShieldAudit defaults.
+  brandName?: string;
+  accentColor?: string;
+  logoUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,8 +154,14 @@ export default function Sidebar({
   module4Unlocked,
   userInitials,
   userEmail,
+  brandName,
+  accentColor,
+  logoUrl,
 }: SidebarProps) {
   const pathname = usePathname();
+
+  const wordmark = brandName?.trim() || 'ShieldAudit';
+  const accentStyle = accentColor?.trim() ? { color: accentColor.trim() } : undefined;
 
   // Build a lookup so nav item rendering can check unlock state by prop key.
   const unlockMap: Record<string, boolean> = {
@@ -169,15 +179,28 @@ export default function Sidebar({
       {/* Logo + org identity                                                  */}
       {/* ------------------------------------------------------------------ */}
       <div className="flex flex-col gap-3 px-5 py-6 border-b border-navy-600">
-        {/* Shield wordmark */}
+        {/* Wordmark — white-label logo + firm name override the defaults */}
         <div className="flex items-center gap-2">
-          <Shield
-            size={22}
-            className="text-teal-400 flex-shrink-0"
-            aria-hidden="true"
-          />
-          <span className="font-sora text-lg font-semibold tracking-tight text-teal-400">
-            ShieldAudit
+          {logoUrl?.trim() ? (
+            // eslint-disable-next-line @next/next/no-img-element -- arbitrary white-label URL; next/image needs static domains
+            <img
+              src={logoUrl.trim()}
+              alt={wordmark}
+              className="h-6 w-auto max-w-[150px] flex-shrink-0 object-contain"
+            />
+          ) : (
+            <Shield
+              size={22}
+              className={`flex-shrink-0 ${accentStyle ? '' : 'text-teal-400'}`}
+              style={accentStyle}
+              aria-hidden="true"
+            />
+          )}
+          <span
+            className={`font-sora text-lg font-semibold tracking-tight ${accentStyle ? '' : 'text-teal-400'}`}
+            style={accentStyle}
+          >
+            {wordmark}
           </span>
         </div>
 
