@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ClipboardList, CheckCircle2, Circle, ChevronRight, AlertCircle, Download } from 'lucide-react';
+import { ClipboardList, CheckCircle2, Circle, ChevronRight, AlertCircle, Download, Sparkles } from 'lucide-react';
 import { AUDIT_COMPONENTS } from '@/lib/components';
 import NewAssessmentButton from './NewAssessmentButton';
 
@@ -24,6 +24,7 @@ async function fetchAssessmentStatus(clerkUserId: string): Promise<{
   assessmentId: string | null;
   hasSession: boolean;
   hasNistSummary: boolean;
+  sessionStatus: string | null;
   componentStatuses: ComponentStatus[];
 }> {
   const { db } = await import('@/db');
@@ -36,7 +37,7 @@ async function fetchAssessmentStatus(clerkUserId: string): Promise<{
     .where(eq(userRoles.clerkUserId, clerkUserId))
     .limit(1);
 
-  if (roleRows.length === 0) return { assessmentId: null, hasSession: false, hasNistSummary: false, componentStatuses: [] };
+  if (roleRows.length === 0) return { assessmentId: null, hasSession: false, hasNistSummary: false, sessionStatus: null, componentStatuses: [] };
   const { orgId } = roleRows[0];
 
   const assessmentRows = await db
@@ -46,17 +47,18 @@ async function fetchAssessmentStatus(clerkUserId: string): Promise<{
     .orderBy(desc(assessments.createdAt))
     .limit(1);
 
-  if (assessmentRows.length === 0) return { assessmentId: null, hasSession: false, hasNistSummary: false, componentStatuses: [] };
+  if (assessmentRows.length === 0) return { assessmentId: null, hasSession: false, hasNistSummary: false, sessionStatus: null, componentStatuses: [] };
   const assessmentId = assessmentRows[0].id;
 
   const sessionRows = await db
-    .select({ id: aiAutofillSessions.id, nistSummaryText: aiAutofillSessions.nistSummaryText })
+    .select({ id: aiAutofillSessions.id, status: aiAutofillSessions.status, nistSummaryText: aiAutofillSessions.nistSummaryText })
     .from(aiAutofillSessions)
     .where(eq(aiAutofillSessions.assessmentId, assessmentId))
     .orderBy(desc(aiAutofillSessions.createdAt))
     .limit(1);
   const hasSession = sessionRows.length > 0;
   const hasNistSummary = !!sessionRows[0]?.nistSummaryText;
+  const sessionStatus = sessionRows[0]?.status ?? null;
 
   // Count only BASE questions (conditionals are revealed dynamically and not
   // counted toward a component's checklist total).
@@ -81,7 +83,7 @@ async function fetchAssessmentStatus(clerkUserId: string): Promise<{
     total: c.questionCount,
   }));
 
-  return { assessmentId, hasSession, hasNistSummary, componentStatuses };
+  return { assessmentId, hasSession, hasNistSummary, sessionStatus, componentStatuses };
 }
 
 export default async function AssessmentPage() {
@@ -89,6 +91,7 @@ export default async function AssessmentPage() {
   let assessmentId: string | null = null;
   let hasSession = true; // assume true on error so we don't loop into the upload page
   let hasNistSummary = false;
+  let sessionStatus: string | null = null;
   let componentStatuses: ComponentStatus[] = [];
 
   try {
@@ -96,6 +99,7 @@ export default async function AssessmentPage() {
     assessmentId = result.assessmentId;
     hasSession = result.hasSession;
     hasNistSummary = result.hasNistSummary;
+    sessionStatus = result.sessionStatus;
     componentStatuses = result.componentStatuses;
   } catch {
     // DB unavailable
@@ -140,6 +144,20 @@ export default async function AssessmentPage() {
           </a>
         )}
       </div>
+
+      {sessionStatus === 'complete' && (
+        <div className="mb-6 max-w-2xl rounded-xl border border-teal-400/20 bg-teal-400/5 p-4 flex items-center justify-between gap-4">
+          <p className="text-xs text-slate-400">
+            AI suggestions are ready to review. Your accept/override progress is saved as you go — leave and come back anytime.
+          </p>
+          <Link
+            href="/dashboard/assessment/autofill-review"
+            className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-teal-400/30 bg-teal-400/10 px-3 py-1.5 text-xs font-medium text-teal-400 hover:bg-teal-400/20 transition-colors"
+          >
+            <Sparkles size={12} /> Review AI suggestions <ChevronRight size={12} />
+          </Link>
+        </div>
+      )}
 
       <div className="mb-6 max-w-2xl rounded-xl bg-navy-600/50 border border-navy-600 p-5">
             <div className="flex items-center justify-between mb-2">

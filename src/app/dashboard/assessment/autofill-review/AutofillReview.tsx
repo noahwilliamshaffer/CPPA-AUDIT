@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Sparkles, ChevronDown, ChevronRight, Download, Loader2, AlertTriangle,
@@ -30,9 +30,11 @@ interface NistSummary {
 }
 
 interface Props {
+  assessmentId: string;
   items: ReviewItem[];
   nistSummary: NistSummary | null;
   components: ComponentMeta[];
+  savedAnswers: Record<string, { response: string | null; responseText: string | null; notes: string | null }>;
 }
 
 interface Decision {
@@ -79,24 +81,67 @@ function answerLabel(value: string | null): string {
   return map[value] ?? value;
 }
 
-export default function AutofillReview({ items, nistSummary, components }: Props) {
+export default function AutofillReview({ assessmentId, items, nistSummary, components, savedAnswers }: Props) {
   const router = useRouter();
   const componentsById = useMemo(() => new Map(components.map(c => [c.number, c])), [components]);
 
+  const STORAGE_KEY = `shieldaudit:autofill-review:${assessmentId}`;
+  const hydratedRef = useRef(false);
+  const clearDraft = () => {
+    try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+  };
+
+  // Initial state: a saved answer (from a prior Apply / manual entry) wins over
+  // the AI default; an in-progress local draft (restored below) wins over both.
   const [decisions, setDecisions] = useState<Record<string, Decision>>(() =>
     Object.fromEntries(
-      items.map(it => [
-        it.questionId,
-        {
+      items.map(it => {
+        const saved = savedAnswers[it.questionId];
+        if (saved && saved.response) {
+          return [it.questionId, {
+            response: saved.response,
+            responseText: saved.responseText ?? '',
+            notes: saved.notes ?? '',
+            included: true,
+            overridden: saved.response !== it.suggestedAnswer,
+          } as Decision];
+        }
+        return [it.questionId, {
           response: it.suggestedAnswer ?? '',
           responseText: '',
           notes: '',
           included: it.suggestedAnswer != null && it.confidence === 'high',
           overridden: false,
-        } as Decision,
-      ])
+        } as Decision];
+      })
     )
   );
+
+  // Restore an in-progress draft (per browser) so leaving the page (e.g. to
+  // Settings) and returning keeps every accept/override choice and note.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw) as Record<string, Decision>;
+        setDecisions(prev => {
+          const next = { ...prev };
+          for (const it of items) {
+            if (draft[it.questionId]) next[it.questionId] = { ...next[it.questionId], ...draft[it.questionId] };
+          }
+          return next;
+        });
+      }
+    } catch { /* ignore corrupt draft */ }
+    hydratedRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist the draft on every change (after the initial restore completes).
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(decisions)); } catch { /* quota — ignore */ }
+  }, [decisions, STORAGE_KEY]);
 
   const counts = useMemo(() => ({
     total: items.length,
@@ -176,6 +221,7 @@ export default function AutofillReview({ items, nistSummary, components }: Props
       });
 
     if (payload.length === 0) {
+      clearDraft();
       router.push('/dashboard/assessment');
       return;
     }
@@ -190,6 +236,7 @@ export default function AutofillReview({ items, nistSummary, components }: Props
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? 'Failed to apply answers.');
       }
+      clearDraft();
       router.push('/dashboard/assessment');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to apply answers.');
@@ -204,6 +251,7 @@ export default function AutofillReview({ items, nistSummary, components }: Props
     try {
       await fetch('/api/ai-autofill/analyze', { method: 'POST', body: fd });
     } catch { /* proceed */ }
+    clearDraft();
     router.push('/dashboard/assessment');
   }
 
@@ -232,8 +280,9 @@ export default function AutofillReview({ items, nistSummary, components }: Props
           </div>
         </div>
         <p className="text-sm text-slate-400">
-          Accept or override each AI-generated answer. Nothing is saved until you apply — you retain full
-          authority over every answer.
+          Accept or override each AI-generated answer. Your progress is saved in this browser as you go, so you can
+          leave and come back. Nothing is written to the assessment until you apply — you retain full authority over
+          every answer.
         </p>
       </div>
 

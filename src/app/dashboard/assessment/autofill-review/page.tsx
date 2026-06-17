@@ -22,8 +22,8 @@ interface RawResult {
 
 async function load(userId: string) {
   const { db } = await import('@/db');
-  const { userRoles, assessments, questions, aiAutofillSessions } = await import('@/db/schema');
-  const { eq, desc } = await import('drizzle-orm');
+  const { userRoles, assessments, questions, answers, aiAutofillSessions } = await import('@/db/schema');
+  const { eq, and, desc } = await import('drizzle-orm');
 
   const roleRows = await db.select({ orgId: userRoles.orgId }).from(userRoles).where(eq(userRoles.clerkUserId, userId)).limit(1);
   if (roleRows.length === 0) return { ok: false as const, redirectTo: '/dashboard/assessment/document-upload' };
@@ -102,7 +102,24 @@ async function load(userId: string) {
 
   const components = AUDIT_COMPONENTS.map(c => ({ number: c.number, title: c.title, citation: c.citation }));
 
-  return { ok: true as const, items, nistSummary, components };
+  // Already-saved answers (e.g. from a prior Apply or manual entry) so the review
+  // page reflects committed state on return, not just the AI defaults.
+  const answerRows = await db
+    .select({
+      questionId: answers.questionId,
+      response: answers.response,
+      responseText: answers.responseText,
+      auditorNotes: answers.auditorNotes,
+    })
+    .from(answers)
+    .where(and(eq(answers.assessmentId, assessmentId), eq(answers.orgId, orgId)));
+
+  const savedAnswers: Record<string, { response: string | null; responseText: string | null; notes: string | null }> =
+    Object.fromEntries(
+      answerRows.map(a => [a.questionId, { response: a.response, responseText: a.responseText, notes: a.auditorNotes }])
+    );
+
+  return { ok: true as const, assessmentId, items, nistSummary, components, savedAnswers };
 }
 
 export default async function AutofillReviewPage() {
@@ -119,5 +136,13 @@ export default async function AutofillReviewPage() {
     redirect(result?.redirectTo ?? '/dashboard/assessment');
   }
 
-  return <AutofillReview items={result.items} nistSummary={result.nistSummary} components={result.components} />;
+  return (
+    <AutofillReview
+      assessmentId={result.assessmentId}
+      items={result.items}
+      nistSummary={result.nistSummary}
+      components={result.components}
+      savedAnswers={result.savedAnswers}
+    />
+  );
 }
