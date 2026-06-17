@@ -13,6 +13,7 @@
 
 import { NextResponse } from 'next/server';
 import { AUDIT_COMPONENTS } from '@/lib/components';
+import { selectApplicableAnswers } from '@/lib/ai/applyResults';
 import type { PipelineDocument, QuestionForAutofill } from '@/app/actions/ai-autofill';
 
 export const runtime = 'nodejs';
@@ -158,7 +159,7 @@ export async function POST(req: Request) {
   const assessmentId = await ensureAssessmentId(orgId, userId);
 
   // Load the question bank for Call 2
-  const { questions } = await import('@/db/schema');
+  const { questions, answers, auditTrailEntries } = await import('@/db/schema');
   const { eq } = await import('drizzle-orm');
   const titleByComponent = new Map(AUDIT_COMPONENTS.map(c => [c.number, c.title]));
   const qRows = await db
@@ -206,6 +207,34 @@ export async function POST(req: Request) {
       })
       .where(eq(aiAutofillSessions.id, session.id));
 
+    // Write the AI's answers straight into the assessment — no separate review
+    // stage. Every answer stays editable on the question pages and is flagged
+    // aiGenerated (low-confidence ones flagged needsClientReview). Each applied
+    // answer is recorded in the immutable audit trail.
+    const answerTypeById = new Map(qRows.map(q => [q.id, q.answerType ?? 'yes_partial_no_na']));
+    const toApply = selectApplicableAnswers(results, answerTypeById);
+    for (const a of toApply) {
+      await db
+        .insert(answers)
+        .values({
+          assessmentId, questionId: a.questionId, orgId, auditorId: userId,
+          response: a.response, responseText: null, auditorNotes: null, updatedAt: new Date(),
+          aiGenerated: true, aiConfidence: a.aiConfidence, aiReasoning: a.aiReasoning, needsClientReview: a.needsClientReview,
+        })
+        .onConflictDoUpdate({
+          target: [answers.assessmentId, answers.questionId],
+          set: {
+            response: a.response, responseText: null, updatedAt: new Date(),
+            aiGenerated: true, aiConfidence: a.aiConfidence, aiReasoning: a.aiReasoning, needsClientReview: a.needsClientReview,
+          },
+        });
+      await db.insert(auditTrailEntries).values({
+        assessmentId, orgId, questionId: a.questionId, auditorId: userId,
+        action: 'ai_autofill_applied',
+        newValue: { response: a.response, aiConfidence: a.aiConfidence },
+      });
+    }
+
     const filled = results.filter(r => r.suggestedAnswer !== null).length;
     const needsReview = results.filter(r => r.needsReview).length;
     const highConfidence = results.filter(r => r.confidence === 'high' && r.suggestedAnswer !== null).length;
@@ -214,7 +243,7 @@ export async function POST(req: Request) {
       ok: true,
       sessionId: session.id,
       status: 'complete',
-      counts: { total: results.length, filled, needsReview, highConfidence },
+      counts: { total: results.length, filled, applied: toApply.length, needsReview, highConfidence },
     });
   } catch (err) {
     await db

@@ -112,7 +112,7 @@ export default function DocumentUploadPage() {
       const res = await fetch('/api/ai-autofill/analyze', { method: 'POST', body: buildForm('analyze') });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Analysis failed.');
-      router.push('/dashboard/assessment/autofill-review');
+      router.push('/dashboard/assessment');
     } catch (e) {
       // A 'failed' session was recorded, so the auditor can proceed manually.
       setError((e instanceof Error ? e.message : 'AI document analysis failed.') + ' You can complete the assessment manually.');
@@ -149,8 +149,8 @@ export default function DocumentUploadPage() {
         </div>
         <p className="text-sm text-slate-400 leading-relaxed">
           Before we begin the assessment, upload your cybersecurity documentation. The AI will read these
-          documents and pre-fill as many questions as possible. <span className="text-slate-300">You will review
-          and approve every AI-generated answer before anything is saved.</span>
+          documents and pre-fill the assessment with the answers it can support. <span className="text-slate-300">Every
+          answer is editable — review and adjust them directly on the question pages.</span>
         </p>
       </div>
 
