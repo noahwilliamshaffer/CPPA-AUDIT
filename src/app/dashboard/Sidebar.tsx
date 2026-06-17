@@ -24,6 +24,7 @@ import {
   Ticket,
   Plug,
   History,
+  Sparkles,
   Settings,
   Lock,
   LogOut,
@@ -40,6 +41,7 @@ export interface SidebarProps {
   module2Unlocked: boolean; // Always true — eligibility pre-screened at provisioning
   module3Unlocked: boolean;
   module4Unlocked: boolean;
+  aiReviewAvailable?: boolean; // show the AI Review entry while an autofill session is complete
   userInitials: string;
   userEmail: string;
   // White-label branding (Phase 6) — empty values fall back to ShieldAudit defaults.
@@ -87,6 +89,8 @@ interface NavItemDef {
   > | null;
   // Message shown on hover when the item is locked
   lockedTooltip: string | null;
+  // Only render when a completed AI autofill session exists (review page reachable)
+  requiresAiReview?: boolean;
 }
 
 const NAV_ITEMS: NavItemDef[] = [
@@ -96,6 +100,14 @@ const NAV_ITEMS: NavItemDef[] = [
     Icon: ClipboardList,
     unlockedPropKey: 'module2Unlocked',
     lockedTooltip: null,
+  },
+  {
+    label: 'AI Review',
+    href: '/dashboard/assessment/autofill-review',
+    Icon: Sparkles,
+    unlockedPropKey: null,
+    lockedTooltip: null,
+    requiresAiReview: true,
   },
   {
     label: 'Scoring Dashboard',
@@ -152,6 +164,7 @@ export default function Sidebar({
   module2Unlocked,
   module3Unlocked,
   module4Unlocked,
+  aiReviewAvailable,
   userInitials,
   userEmail,
   brandName,
@@ -225,7 +238,7 @@ export default function Sidebar({
       {/* ------------------------------------------------------------------ */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="flex flex-col gap-1" role="list">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter((item) => !item.requiresAiReview || aiReviewAvailable).map((item) => {
             // Determine if this item is unlocked.
             // null unlockedPropKey means "always unlocked" (Settings).
             const isUnlocked =

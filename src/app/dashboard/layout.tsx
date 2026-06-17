@@ -14,6 +14,7 @@ interface ModuleUnlockStatus {
   module2Unlocked: boolean;
   module3Unlocked: boolean;
   module4Unlocked: boolean;
+  aiReviewAvailable: boolean;
 }
 
 interface OrgContext {
@@ -45,13 +46,13 @@ async function fetchOrgContext(localUserId: string): Promise<OrgContext | null> 
 
 async function fetchModuleUnlockStatus(orgId: string): Promise<ModuleUnlockStatus> {
   const { db } = await import('@/db');
-  const { assessments } = await import('@/db/schema');
+  const { assessments, aiAutofillSessions } = await import('@/db/schema');
   const { eq, desc } = await import('drizzle-orm');
 
   const module2Unlocked = true;
 
   const assessmentRows = await db
-    .select({ status: assessments.status })
+    .select({ id: assessments.id, status: assessments.status })
     .from(assessments)
     .where(eq(assessments.orgId, orgId))
     .orderBy(desc(assessments.createdAt))
@@ -61,7 +62,21 @@ async function fetchModuleUnlockStatus(orgId: string): Promise<ModuleUnlockStatu
   const module3Unlocked =
     latestStatus === 'scoring' || latestStatus === 'complete' || latestStatus === 'locked';
 
-  return { module2Unlocked, module3Unlocked, module4Unlocked: module3Unlocked };
+  // AI Review is reachable while the latest autofill session is 'complete' — show
+  // a persistent nav entry so the review page is always one click away.
+  let aiReviewAvailable = false;
+  const assessmentId = assessmentRows[0]?.id;
+  if (assessmentId) {
+    const sessionRows = await db
+      .select({ status: aiAutofillSessions.status })
+      .from(aiAutofillSessions)
+      .where(eq(aiAutofillSessions.assessmentId, assessmentId))
+      .orderBy(desc(aiAutofillSessions.createdAt))
+      .limit(1);
+    aiReviewAvailable = sessionRows[0]?.status === 'complete';
+  }
+
+  return { module2Unlocked, module3Unlocked, module4Unlocked: module3Unlocked, aiReviewAvailable };
 }
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -71,6 +86,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     module2Unlocked: true,
     module3Unlocked: false,
     module4Unlocked: false,
+    aiReviewAvailable: false,
   };
 
   let orgFetchError = false;
@@ -107,6 +123,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         module2Unlocked={moduleStatus.module2Unlocked}
         module3Unlocked={moduleStatus.module3Unlocked}
         module4Unlocked={moduleStatus.module4Unlocked}
+        aiReviewAvailable={moduleStatus.aiReviewAvailable}
         userInitials="SA"
         userEmail="local@shieldaudit"
         brandName={brand.companyName}
