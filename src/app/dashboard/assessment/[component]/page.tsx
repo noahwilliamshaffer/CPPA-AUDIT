@@ -13,6 +13,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { AUDIT_COMPONENTS } from '@/lib/components';
 import ComponentQuestions from './ComponentQuestions';
 import EvidenceLocker from './EvidenceLocker';
+import AuditorLogs from './AuditorLogs';
 
 interface PageProps {
   params: Promise<{ component: string }>;
@@ -211,6 +212,11 @@ export default async function ComponentPage({ params }: PageProps) {
       {/* Evidence Locker (§7123(e)) */}
       {data && !data.gated && data.assessmentId && (
         <EvidenceLocker componentNumber={componentNumber} />
+      )}
+
+      {/* Testing + Interview logs (§7123(e) auditor-observed evidence) */}
+      {data && !data.gated && data.assessmentId && (
+        <AuditorLogs componentNumber={componentNumber} />
       )}
 
       {/* Prev / Next navigation */}
