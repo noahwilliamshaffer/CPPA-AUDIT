@@ -4,9 +4,8 @@
  */
 
 import { NextResponse } from 'next/server';
-import fs from 'node:fs';
 import { getOrgAndAssessment } from '@/lib/current-assessment';
-import { resolveEvidencePath } from '@/lib/evidence-storage';
+import { readEvidence } from '@/lib/evidence-storage';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -30,7 +29,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   let buf: Buffer;
   try {
-    buf = fs.readFileSync(resolveEvidencePath(item.fileUrl));
+    buf = readEvidence(item.fileUrl);
   } catch {
     return NextResponse.json({ error: 'File missing on disk.' }, { status: 410 });
   }

@@ -8,6 +8,7 @@
 import 'server-only';
 import fs from 'node:fs';
 import path from 'node:path';
+import { encryptBuffer, decryptBuffer } from '@/lib/settings/crypto';
 
 export const MAX_EVIDENCE_BYTES = 25 * 1024 * 1024; // 25 MB
 
@@ -42,8 +43,20 @@ export function saveEvidence(id: string, fileName: string, buf: Buffer): string 
   const key = storageKeyFor(id, fileName);
   const abs = path.join(dataDir(), key);
   fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, buf);
+  // Encrypt evidence at rest (AES-256-GCM) — §7123 Evidence Locker requirement.
+  fs.writeFileSync(abs, encryptBuffer(buf));
   return key;
+}
+
+/** Read + decrypt an evidence file. Falls back to raw bytes for any legacy
+ *  (pre-encryption) file so older uploads still download. */
+export function readEvidence(storageKey: string): Buffer {
+  const raw = fs.readFileSync(resolveEvidencePath(storageKey));
+  try {
+    return decryptBuffer(raw);
+  } catch {
+    return raw; // legacy plaintext file
+  }
 }
 
 export function resolveEvidencePath(storageKey: string): string {

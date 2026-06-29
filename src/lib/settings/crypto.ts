@@ -62,3 +62,22 @@ export function decryptSecret(payload: string): string {
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
 }
+
+// ── Binary helpers (e.g. Evidence Locker files at rest) ──────────────────────
+/** Encrypt arbitrary bytes. Output layout: iv(12) | authTag(16) | ciphertext. */
+export function encryptBuffer(plain: Buffer): Buffer {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', resolveKey(), iv);
+  const enc = Buffer.concat([cipher.update(plain), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, enc]);
+}
+
+export function decryptBuffer(payload: Buffer): Buffer {
+  const iv = payload.subarray(0, 12);
+  const tag = payload.subarray(12, 28);
+  const data = payload.subarray(28);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', resolveKey(), iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(data), decipher.final()]);
+}
