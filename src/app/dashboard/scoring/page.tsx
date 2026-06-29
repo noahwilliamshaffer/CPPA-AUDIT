@@ -23,7 +23,7 @@ interface ComponentScore {
 
 async function fetchScoringData(clerkUserId: string) {
   const { db } = await import('@/db');
-  const { userRoles, assessments, eligibilityResults, componentScores, answers } = await import('@/db/schema');
+  const { userRoles, organizations, assessments, eligibilityResults, componentScores, answers, questions } = await import('@/db/schema');
   const { eq, desc, sql } = await import('drizzle-orm');
 
   const roleRows = await db
@@ -70,12 +70,42 @@ async function fetchScoringData(clerkUserId: string) {
     .where(eq(componentScores.assessmentId, assessmentId))
     .orderBy(componentScores.componentNumber);
 
+  // ── Module 3 insight inputs ────────────────────────────────────────────────
+  const orgRows = await db
+    .select({ recordCount: organizations.consumerRecordCount, revenueTier: organizations.revenueTier })
+    .from(organizations)
+    .where(eq(organizations.id, orgId))
+    .limit(1);
+
+  const dlRows = await db
+    .select({ deadline: eligibilityResults.submissionDeadline })
+    .from(eligibilityResults)
+    .where(eq(eligibilityResults.orgId, orgId))
+    .orderBy(desc(eligibilityResults.createdAt))
+    .limit(1);
+
+  const answeredMeta = await db
+    .select({
+      response: answers.response,
+      riskWeight: questions.riskWeight,
+      componentNumber: questions.componentNumber,
+      questionText: questions.questionText,
+      nistCsf: questions.nistCsfMapping,
+    })
+    .from(answers)
+    .innerJoin(questions, eq(answers.questionId, questions.id))
+    .where(eq(answers.assessmentId, assessmentId));
+
   return {
     gated: false as const,
     assessmentId,
     assessmentStatus,
     answerCount,
     scores: scores as ComponentScore[],
+    recordCount: orgRows[0]?.recordCount ?? null,
+    revenueTier: orgRows[0]?.revenueTier ?? null,
+    submissionDeadline: dlRows[0]?.deadline ?? null,
+    answeredMeta,
   };
 }
 
@@ -93,8 +123,43 @@ export default async function ScoringPage() {
     return <GatedView reason={data.gated} />;
   }
 
-  const { assessmentId, assessmentStatus, answerCount, scores } = data;
+  const { assessmentId, assessmentStatus, answerCount, scores, recordCount, submissionDeadline, answeredMeta } = data;
   const hasScores = scores.length > 0;
+
+  // ── Module 3 insights ──────────────────────────────────────────────────────
+  const usd = (n: number) => '$' + n.toLocaleString('en-US');
+  const penaltyMid = recordCount ? recordCount * 5325 : null;   // midpoint $/record/day
+  const penaltyLow = recordCount ? recordCount * 2663 : null;
+  const penaltyHigh = recordCount ? recordCount * 7988 : null;
+  const deadlineDays = submissionDeadline
+    ? Math.ceil((new Date(submissionDeadline).getTime() - Date.now()) / 86400000)
+    : null;
+
+  const RISK_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  const RISK_BADGE: Record<string, string> = {
+    critical: 'text-red-400 bg-red-400/10', high: 'text-orange-400 bg-orange-400/10',
+    medium: 'text-amber-400 bg-amber-400/10', low: 'text-slate-400 bg-slate-500/10',
+  };
+  const topGaps = answeredMeta
+    .filter(a => a.response === 'no' || a.response === 'partial')
+    .sort((a, b) => (RISK_RANK[a.riskWeight] ?? 9) - (RISK_RANK[b.riskWeight] ?? 9))
+    .slice(0, 5);
+
+  const RESP_PTS: Record<string, number> = { yes: 100, partial: 50, no: 0 };
+  const CSF_NAMES: Record<string, string> = { GV: 'Govern', ID: 'Identify', PR: 'Protect', DE: 'Detect', RS: 'Respond', RC: 'Recover' };
+  const csfAgg: Record<string, { sum: number; n: number }> = {};
+  for (const a of answeredMeta) {
+    const pts = RESP_PTS[a.response];
+    if (pts === undefined) continue; // skip N/A + non-scoring
+    const code = (a.nistCsf ?? '').split('.')[0].trim().toUpperCase().slice(0, 2);
+    if (!CSF_NAMES[code]) continue;
+    const e = (csfAgg[code] ??= { sum: 0, n: 0 });
+    e.sum += pts;
+    e.n++;
+  }
+  const csfRows = Object.keys(CSF_NAMES)
+    .filter(code => csfAgg[code]?.n)
+    .map(code => ({ code, name: CSF_NAMES[code], score: Math.round(csfAgg[code].sum / csfAgg[code].n) }));
 
   // Build a map for O(1) lookup when rendering the component grid
   const scoreMap = new Map(scores.map(s => [s.componentNumber, s]));
@@ -248,6 +313,83 @@ export default async function ScoringPage() {
             Average across {scores.length} scored component{scores.length !== 1 ? 's' : ''} ·{' '}
             {answerCount} questions answered
           </p>
+        </div>
+      )}
+
+      {/* Audit insights (penalty exposure, deadline, top gaps, NIST CSF) */}
+      {hasScores && (
+        <div className="mb-6 max-w-2xl grid gap-3 sm:grid-cols-2">
+          {/* Penalty exposure */}
+          <div className="rounded-xl border border-navy-600 bg-navy-600/20 p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Penalty exposure (per day)</p>
+            {penaltyMid !== null ? (
+              <>
+                <p className="font-sora text-2xl font-bold text-score-red">{usd(penaltyMid)}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  {usd(penaltyLow!)}–{usd(penaltyHigh!)} · {recordCount!.toLocaleString()} records × $2,663–$7,988 per record/day
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-slate-500">Set consumer record count at onboarding to estimate.</p>
+            )}
+          </div>
+
+          {/* Deadline countdown */}
+          <div className="rounded-xl border border-navy-600 bg-navy-600/20 p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Submission deadline</p>
+            {deadlineDays !== null ? (
+              <>
+                <p className={`font-sora text-2xl font-bold ${deadlineDays < 60 ? 'text-score-red' : deadlineDays < 180 ? 'text-score-yellow' : 'text-teal-400'}`}>
+                  {deadlineDays} days
+                </p>
+                <p className="text-[10px] text-slate-500 mt-0.5">Due {submissionDeadline} (§7124)</p>
+              </>
+            ) : (
+              <p className="text-xs text-slate-500">No submission deadline on file.</p>
+            )}
+          </div>
+
+          {/* Top critical gaps */}
+          <div className="rounded-xl border border-navy-600 bg-navy-600/20 p-4 sm:col-span-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Top critical gaps</p>
+            {topGaps.length === 0 ? (
+              <p className="text-xs text-slate-500">No open gaps — all assessed controls are implemented.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {topGaps.map((g, i) => (
+                  <li key={i} className="flex items-center gap-2 text-xs">
+                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-medium uppercase ${RISK_BADGE[g.riskWeight] ?? RISK_BADGE.low}`}>{g.riskWeight}</span>
+                    <span className="text-slate-600 font-mono text-[10px] flex-shrink-0">§7123(c)({g.componentNumber})</span>
+                    <span className="text-slate-400 truncate">{g.questionText}</span>
+                    <span className={`ml-auto flex-shrink-0 text-[10px] font-medium ${g.response === 'no' ? 'text-score-red' : 'text-score-yellow'}`}>{g.response}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* NIST CSF 2.0 function alignment */}
+          {csfRows.length > 0 && (
+            <div className="rounded-xl border border-navy-600 bg-navy-600/20 p-4 sm:col-span-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-2">NIST CSF 2.0 function alignment</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+                {csfRows.map(f => (
+                  <div key={f.code}>
+                    <div className="flex items-center justify-between text-[10px] mb-0.5">
+                      <span className="text-slate-400">{f.name}</span>
+                      <span className="font-mono text-slate-500">{f.score}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-navy-800">
+                      <div
+                        className={`h-1.5 rounded-full ${f.score >= 80 ? 'bg-score-green' : f.score >= 50 ? 'bg-score-yellow' : 'bg-score-red'}`}
+                        style={{ width: `${f.score}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
