@@ -11,7 +11,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Building2, Mail, ChevronRight, Loader2 } from 'lucide-react';
@@ -83,6 +83,9 @@ export default function OnboardingWizard() {
   const form2 = useForm<Step2Fields>({
     resolver: zodResolver(step2Schema),
   });
+  // useWatch (a proper hook) instead of form2.watch() — React Compiler-compatible
+  // and evaluated once rather than per render of each option button.
+  const revenueTier = useWatch({ control: form2.control, name: 'revenueTier' });
 
   // Step 1 → Step 2
   const handleStep1 = form1.handleSubmit((values) => {
@@ -202,24 +205,21 @@ export default function OnboardingWizard() {
                 { value: 'under_50m',    label: 'Under $50M annually' },
                 { value: '50m_to_100m',  label: '$50M – $100M annually' },
                 { value: 'over_100m',    label: 'Over $100M annually' },
-              ].map(({ value, label }) => {
-                const current = form2.watch('revenueTier');
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => form2.setValue('revenueTier', value as Step2Fields['revenueTier'])}
-                    className={[
-                      'w-full rounded-xl border-2 px-5 py-4 text-left text-sm font-medium transition-all',
-                      current === value
-                        ? 'border-teal-500 bg-teal-500/10 text-slate-100'
-                        : 'border-navy-600 bg-navy-600 text-slate-400 hover:border-navy-400 hover:text-slate-200',
-                    ].join(' ')}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
+              ].map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => form2.setValue('revenueTier', value as Step2Fields['revenueTier'])}
+                  className={[
+                    'w-full rounded-xl border-2 px-5 py-4 text-left text-sm font-medium transition-all',
+                    revenueTier === value
+                      ? 'border-teal-500 bg-teal-500/10 text-slate-100'
+                      : 'border-navy-600 bg-navy-600 text-slate-400 hover:border-navy-400 hover:text-slate-200',
+                  ].join(' ')}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
             {submitError && (
