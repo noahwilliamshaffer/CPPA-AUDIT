@@ -40,6 +40,18 @@ export interface ReportBrand {
   footer?: string;
 }
 
+export interface GapForReport {
+  citation: string;
+  componentNumber: number;
+  riskWeight: string;
+  response: string;
+  title: string;
+  description: string;
+  remediationPlan: string | null;
+  remediationDue: string | null;
+  status: string;
+}
+
 export interface AuditReportInput {
   orgName: string;
   legalEntity: string | null;
@@ -49,6 +61,7 @@ export interface AuditReportInput {
   components: ComponentData[];
   aiAssisted?: AiAssistedSummary;
   brand?: ReportBrand;
+  gaps?: GapForReport[];
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -147,6 +160,7 @@ export async function generateAuditReportPdf(input: AuditReportInput): Promise<B
     generatedAt,
     components,
     brand,
+    gaps,
   } = input;
 
   const firm = brand?.firmName?.trim();
@@ -543,6 +557,52 @@ export async function generateAuditReportPdf(input: AuditReportInput): Promise<B
     });
 
     drawPageFooter(doc, orgName, generatedAt, margin, pageW, contentW, pageH);
+
+    // ── GAPS & REMEDIATION PLAN (§7123(d) elements 4 & 6) ─────────────────
+    if (gaps && gaps.length > 0) {
+      const STATUS_LABEL: Record<string, string> = { open: 'Open', in_progress: 'In Progress', resolved: 'Resolved', accepted_risk: 'Accepted Risk' };
+      doc.addPage();
+      drawPageHeader(doc, 'GAPS & REMEDIATION PLAN', 'Document A — §7123(d)', margin, pageW, contentW);
+      y = 100;
+      doc
+        .fillColor(COLORS.bodyText)
+        .fontSize(9)
+        .font('Helvetica')
+        .text(
+          `${gaps.length} gap(s) were identified from controls assessed as Partial or Not Implemented. Each is listed below with the auditor's remediation plan, target date, and status.`,
+          margin, y, { width: contentW, lineGap: 2 }
+        );
+      y = doc.y + 14;
+
+      gaps.forEach((g) => {
+        const planText = g.remediationPlan?.trim() || 'No remediation plan recorded.';
+        doc.fontSize(8.5).font('Helvetica');
+        const planH = doc.heightOfString(planText, { width: contentW - 24, lineGap: 1 });
+        const blockH = 36 + planH + 10;
+        if (y + blockH > pageH - 80) {
+          drawPageFooter(doc, orgName, generatedAt, margin, pageW, contentW, pageH);
+          doc.addPage();
+          drawPageHeader(doc, 'GAPS & REMEDIATION PLAN (CONT.)', 'Document A — §7123(d)', margin, pageW, contentW);
+          y = 100;
+        }
+        const riskColor = g.riskWeight === 'critical' ? COLORS.red : g.riskWeight === 'high' ? '#f97316' : g.riskWeight === 'medium' ? COLORS.yellow : COLORS.slate;
+        doc.rect(margin, y, contentW, blockH).fill(COLORS.lightGray);
+        doc.rect(margin, y, 4, blockH).fill(riskColor);
+        doc.fillColor(COLORS.navy).fontSize(9).font('Helvetica-Bold').text(g.title, margin + 12, y + 8, { width: contentW - 24 });
+        doc
+          .fillColor(riskColor)
+          .fontSize(7)
+          .font('Helvetica-Bold')
+          .text(
+            `${riskLabel(g.riskWeight).toUpperCase()} · ${g.response.toUpperCase()} · ${STATUS_LABEL[g.status] ?? g.status}${g.remediationDue ? ` · TARGET ${g.remediationDue}` : ''}`,
+            margin + 12, y + 22, { characterSpacing: 0.3 }
+          );
+        doc.fillColor(COLORS.bodyText).fontSize(8.5).font('Helvetica').text(planText, margin + 12, y + 34, { width: contentW - 24, lineGap: 1 });
+        y += blockH + 8;
+      });
+
+      drawPageFooter(doc, orgName, generatedAt, margin, pageW, contentW, pageH);
+    }
 
     // ── PAGES 4+: Per-Component Findings ─────────────────────────────────
     components.forEach((comp) => {

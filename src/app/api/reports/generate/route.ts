@@ -209,6 +209,16 @@ export async function POST(req: NextRequest) {
       ? { firmName: brandCfg.companyName || undefined, footer: brandCfg.reportFooter || undefined }
       : undefined;
 
+  // Gaps + remediation plan for Document A (§7123(d) elements 4 & 6). Sync from
+  // current no/partial answers (preserves the auditor's remediation), then load.
+  const { syncGaps, loadGaps } = await import('@/lib/gaps');
+  await syncGaps(assessmentId, orgId);
+  const reportGaps = (await loadGaps(assessmentId)).map(g => ({
+    citation: g.citation, componentNumber: g.componentNumber, riskWeight: g.riskWeight,
+    response: g.response, title: g.title, description: g.description,
+    remediationPlan: g.remediationPlan, remediationDue: g.remediationDue, status: g.status,
+  }));
+
   if (format === 'pdf') {
     // PDF generators — dynamically imported to avoid crypto init at build time
     const { generateAuditReportPdf } = await import('@/lib/pdf/auditReport');
@@ -224,6 +234,7 @@ export async function POST(req: NextRequest) {
         components,
         aiAssisted,
         brand: reportBrand,
+        gaps: reportGaps,
       });
       fileName = `ShieldAudit-Report-A-${slug}-${auditPeriodEnd ?? 'undated'}.pdf`;
     } else {
