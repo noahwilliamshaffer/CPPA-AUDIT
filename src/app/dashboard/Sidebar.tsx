@@ -22,6 +22,7 @@ import {
   BarChart3,
   FileText,
   Ticket,
+  ClipboardCheck,
   Plug,
   History,
   Settings,
@@ -117,6 +118,13 @@ const NAV_ITEMS: NavItemDef[] = [
     Icon: Ticket,
     unlockedPropKey: 'module4Unlocked',
     lockedTooltip: 'Complete the Scoring Dashboard first',
+  },
+  {
+    label: 'Gaps & Remediation',
+    href: '/dashboard/gaps',
+    Icon: ClipboardCheck,
+    unlockedPropKey: null,
+    lockedTooltip: null,
   },
   {
     label: 'Audit Trail',

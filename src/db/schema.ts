@@ -257,6 +257,34 @@ export const admtAssessments = sqliteTable('admt_assessments', {
 });
 
 // ---------------------------------------------------------------------------
+// gap_records — persistent gaps + remediation plan (§7123(d) Document A
+// elements 4 & 6). Generated from no/partial answers; the auditor records a
+// remediation plan, target date, and status. One row per (assessment, question).
+// ---------------------------------------------------------------------------
+export const gapRecords = sqliteTable(
+  'gap_records',
+  {
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
+    orgId: text('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    componentNumber: integer('component_number').notNull(),
+    questionId: text('question_id').references(() => questions.id),
+    riskWeight: text('risk_weight').notNull(),     // critical | high | medium | low
+    response: text('response').notNull(),          // 'no' | 'partial'
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    remediationPlan: text('remediation_plan'),
+    remediationDue: text('remediation_due'),       // target date (YYYY-MM-DD)
+    status: text('status').notNull().default('open'), // open | in_progress | resolved | accepted_risk
+    createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    gapAssessmentQuestionIdx: uniqueIndex('gap_records_assessment_question_idx').on(t.assessmentId, t.questionId),
+  })
+);
+
+// ---------------------------------------------------------------------------
 // reports — generated Document A and Document B.
 // ---------------------------------------------------------------------------
 export const reports = sqliteTable('reports', {
