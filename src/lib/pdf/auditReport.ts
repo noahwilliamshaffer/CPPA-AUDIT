@@ -604,6 +604,44 @@ export async function generateAuditReportPdf(input: AuditReportInput): Promise<B
       drawPageFooter(doc, orgName, generatedAt, margin, pageW, contentW, pageH);
     }
 
+    // ── ADMT DETERMINATION (§7001(ddd) / §7200–7222) ─────────────────────
+    // The §7001(ddd) determination — whether the business uses ADMT for
+    // significant decisions — drives whether the §7200–7222 obligations apply.
+    // Derived from the ADMT gate answer (A-01) already present in `components`.
+    {
+      const admtComp = components.find((c) => c.number === 19);
+      const a01 = admtComp?.answers.find((a) => a.questionId === 'A-01');
+      const admtAnswered = !!a01;
+      const usesAdmt = a01?.response === 'yes';
+
+      doc.addPage();
+      drawPageHeader(doc, 'ADMT DETERMINATION', 'Document A — §7001(ddd) / §7200–7222', margin, pageW, contentW);
+      y = 100;
+
+      const determination = !admtAnswered
+        ? 'Not yet determined'
+        : usesAdmt
+          ? 'ADMT IS used for significant decisions'
+          : 'ADMT is NOT used for significant decisions';
+      const detColor = !admtAnswered ? COLORS.slate : usesAdmt ? COLORS.yellow : COLORS.green;
+
+      doc.rect(margin, y, contentW, 44).fill(COLORS.lightGray);
+      doc.rect(margin, y, 5, 44).fill(detColor);
+      doc.fillColor(COLORS.slate).fontSize(7).font('Helvetica-Bold').text('DETERMINATION (GATE QUESTION A-01)', margin + 16, y + 9, { characterSpacing: 1 });
+      doc.fillColor(detColor).fontSize(13).font('Helvetica-Bold').text(determination, margin + 16, y + 21, { width: contentW - 32 });
+      y += 58;
+
+      const narrative = !admtAnswered
+        ? 'The ADMT gate question (A-01) has not been answered. Whether the Automated Decision-Making Technology obligations under §7200–7222 apply could not be determined; this sub-assessment must be completed before the audit is final.'
+        : usesAdmt
+          ? 'The business reported using Automated Decision-Making Technology (ADMT) to make significant decisions concerning consumers, as defined in §7001(ddd). The ADMT sub-assessment (Component 19) was therefore completed; its findings against the §7200–7222 obligations — pre-use notice, opt-out / exception, human appeal, and access and explanation rights — are presented in the Component 19 findings section below.'
+          : 'The business reported that it does NOT use Automated Decision-Making Technology to make significant decisions concerning consumers (§7001(ddd)). The ADMT sub-assessment (Component 19) is therefore Not Applicable and is excluded from the cybersecurity risk score. Should the business later adopt ADMT for significant decisions, the §7200–7222 obligations would apply and this sub-assessment must be completed.';
+
+      doc.fillColor(COLORS.bodyText).fontSize(9.5).font('Helvetica').text(narrative, margin, y, { width: contentW, lineGap: 3 });
+
+      drawPageFooter(doc, orgName, generatedAt, margin, pageW, contentW, pageH);
+    }
+
     // ── PAGES 4+: Per-Component Findings ─────────────────────────────────
     components.forEach((comp) => {
       if (comp.answers.length === 0) return;

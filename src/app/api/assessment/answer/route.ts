@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   }
 
   const { db } = await import('@/db');
-  const { answers, assessments, auditTrailEntries, questions, userRoles } = await import('@/db/schema');
+  const { answers, assessments, auditTrailEntries, questions, userRoles, componentApplicability } = await import('@/db/schema');
   const { eq, and } = await import('drizzle-orm');
 
   // Verify assessment belongs to user's org
@@ -136,6 +136,31 @@ export async function POST(req: Request) {
       : null,
     newValue: { response: body.response, responseText, notes: body.auditorNotes ?? null },
   });
+
+  // ADMT gate (A-01, §7001(ddd)): drives the assessment's uses_admt flag and
+  // component-19 applicability. If the business doesn't use ADMT for significant
+  // decisions, component 19 is Not Applicable (excluded from scoring) and its
+  // §7200–7222 sub-questions stay hidden.
+  if (body.questionId === 'A-01') {
+    const usesAdmt = body.response === 'yes';
+    await db.update(assessments).set({ usesAdmt }).where(eq(assessments.id, body.assessmentId));
+
+    const existingApp = await db
+      .select({ id: componentApplicability.id })
+      .from(componentApplicability)
+      .where(and(eq(componentApplicability.assessmentId, body.assessmentId), eq(componentApplicability.componentNumber, 19)))
+      .limit(1);
+    if (existingApp.length > 0) {
+      await db
+        .update(componentApplicability)
+        .set({ applicable: usesAdmt, markedAt: new Date() })
+        .where(eq(componentApplicability.id, existingApp[0].id));
+    } else {
+      await db.insert(componentApplicability).values({
+        assessmentId: body.assessmentId, componentNumber: 19, applicable: usesAdmt, completed: false, auditorId: userId,
+      });
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }
