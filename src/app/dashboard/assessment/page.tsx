@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ClipboardList, CheckCircle2, Circle, ChevronRight, AlertCircle, Download } from 'lucide-react';
+import { ClipboardList, CheckCircle2, Circle, ChevronRight, AlertCircle, Download, MinusCircle } from 'lucide-react';
 import { AUDIT_COMPONENTS } from '@/lib/components';
 import NewAssessmentButton from './NewAssessmentButton';
 
@@ -18,6 +18,8 @@ interface ComponentStatus {
   componentNumber: number;
   answered: number;
   total: number;
+  applicable: boolean;
+  markedComplete: boolean;
 }
 
 async function fetchAssessmentStatus(clerkUserId: string): Promise<{
@@ -27,7 +29,7 @@ async function fetchAssessmentStatus(clerkUserId: string): Promise<{
   componentStatuses: ComponentStatus[];
 }> {
   const { db } = await import('@/db');
-  const { userRoles, assessments, answers, questions, aiAutofillSessions } = await import('@/db/schema');
+  const { userRoles, assessments, answers, questions, aiAutofillSessions, componentApplicability } = await import('@/db/schema');
   const { eq, desc, and, sql, isNull } = await import('drizzle-orm');
 
   const roleRows = await db
@@ -48,6 +50,17 @@ async function fetchAssessmentStatus(clerkUserId: string): Promise<{
 
   if (assessmentRows.length === 0) return { assessmentId: null, hasSession: false, hasNistSummary: false, componentStatuses: [] };
   const assessmentId = assessmentRows[0].id;
+
+  // Auditor-set applicability / completion per component (§7123(c)).
+  const appRows = await db
+    .select({
+      componentNumber: componentApplicability.componentNumber,
+      applicable: componentApplicability.applicable,
+      completed: componentApplicability.completed,
+    })
+    .from(componentApplicability)
+    .where(eq(componentApplicability.assessmentId, assessmentId));
+  const appMap = new Map(appRows.map(r => [r.componentNumber, r]));
 
   const sessionRows = await db
     .select({ id: aiAutofillSessions.id, nistSummaryText: aiAutofillSessions.nistSummaryText })
@@ -79,6 +92,8 @@ async function fetchAssessmentStatus(clerkUserId: string): Promise<{
     componentNumber: c.number,
     answered: countMap.get(c.number) ?? 0,
     total: c.questionCount,
+    applicable: appMap.get(c.number)?.applicable ?? true,
+    markedComplete: appMap.get(c.number)?.completed ?? false,
   }));
 
   return { assessmentId, hasSession, hasNistSummary, componentStatuses };
@@ -107,8 +122,10 @@ export default async function AssessmentPage() {
   }
 
   const statusMap = new Map(componentStatuses.map(s => [s.componentNumber, s]));
-  const totalAnswered = componentStatuses.reduce((sum, s) => sum + Math.min(s.answered, s.total), 0);
-  const totalQuestions = componentStatuses.reduce((sum, s) => sum + s.total, 0);
+  // Components marked Not Applicable don't count toward overall progress.
+  const applicableStatuses = componentStatuses.filter(s => s.applicable);
+  const totalAnswered = applicableStatuses.reduce((sum, s) => sum + Math.min(s.answered, s.total), 0);
+  const totalQuestions = applicableStatuses.reduce((sum, s) => sum + s.total, 0);
   const overallPct = totalQuestions > 0 ? Math.round((totalAnswered / totalQuestions) * 100) : 0;
 
   return (
@@ -183,18 +200,28 @@ export default async function AssessmentPage() {
               const answered = Math.min(status?.answered ?? 0, component.questionCount);
               const total = component.questionCount;
               const pct = total > 0 ? Math.min(100, Math.round((answered / total) * 100)) : 0;
-              const complete = answered >= total && total > 0;
+              const notApplicable = status?.applicable === false;
+              // "Complete" = auditor explicitly marked it, or every base question is answered.
+              const complete = !notApplicable && ((status?.markedComplete ?? false) || (answered >= total && total > 0));
 
               return (
                 <Link
                   key={component.number}
                   href={`/dashboard/assessment/${component.number}`}
-                  className="group rounded-xl border border-navy-600 bg-navy-600/30 p-5 transition-all hover:border-teal-400/30 hover:bg-navy-600/60"
+                  className={`group rounded-xl border p-5 transition-all hover:border-teal-400/30 hover:bg-navy-600/60 ${
+                    notApplicable ? 'border-navy-600 bg-navy-600/10 opacity-60' : 'border-navy-600 bg-navy-600/30'
+                  }`}
                 >
                   <div className="flex items-start justify-between mb-2">
                     <span className="font-mono text-xs text-slate-500">{component.citation}</span>
-                    {complete ? (
-                      <CheckCircle2 size={15} className="text-score-green flex-shrink-0" />
+                    {notApplicable ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-slate-500/30 bg-slate-500/10 px-2 py-0.5 text-[10px] font-medium text-slate-400">
+                        <MinusCircle size={11} /> N/A
+                      </span>
+                    ) : complete ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-score-green/30 bg-score-green/10 px-2 py-0.5 text-[10px] font-medium text-score-green">
+                        <CheckCircle2 size={11} /> {status?.markedComplete ? 'Complete' : 'Answered'}
+                      </span>
                     ) : answered > 0 ? (
                       <span className="font-mono text-xs text-teal-400">{pct}%</span>
                     ) : (
@@ -207,13 +234,19 @@ export default async function AssessmentPage() {
                   <p className="text-xs text-slate-500 leading-relaxed line-clamp-2 mb-4">
                     {component.description}
                   </p>
-                  <div className="h-1 w-full rounded-full bg-navy-800">
-                    <div
-                      className={`h-1 rounded-full transition-all duration-300 ${complete ? 'bg-score-green' : 'bg-teal-400'}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <p className="mt-1.5 text-xs text-slate-600">{answered}/{total} questions</p>
+                  {notApplicable ? (
+                    <p className="text-xs text-slate-500 italic">Marked not applicable</p>
+                  ) : (
+                    <>
+                      <div className="h-1 w-full rounded-full bg-navy-800">
+                        <div
+                          className={`h-1 rounded-full transition-all duration-300 ${complete ? 'bg-score-green' : 'bg-teal-400'}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <p className="mt-1.5 text-xs text-slate-600">{answered}/{total} questions</p>
+                    </>
+                  )}
                 </Link>
               );
             })}

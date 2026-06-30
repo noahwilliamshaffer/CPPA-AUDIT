@@ -43,7 +43,7 @@ export async function POST() {
   
 
   const { db } = await import('@/db');
-  const { userRoles, assessments, answers, questions, componentScores } = await import('@/db/schema');
+  const { userRoles, assessments, answers, questions, componentScores, componentApplicability } = await import('@/db/schema');
   const { eq, desc, and } = await import('drizzle-orm');
 
   const roleRows = await db
@@ -65,6 +65,13 @@ export async function POST() {
   }
   const { id: assessmentId, status } = assessmentRows[0];
 
+  // Components the auditor marked Not Applicable are excluded from scoring (§7123(c) "if applicable").
+  const naRows = await db
+    .select({ componentNumber: componentApplicability.componentNumber })
+    .from(componentApplicability)
+    .where(and(eq(componentApplicability.assessmentId, assessmentId), eq(componentApplicability.applicable, false)));
+  const notApplicable = new Set(naRows.map(r => r.componentNumber));
+
   // Fetch all answers joined with question metadata for this assessment
   const rows = await db
     .select({
@@ -80,6 +87,8 @@ export async function POST() {
   // Aggregate per component
   const componentMap = new Map<number, { weightedPoints: number; maxWeightedPoints: number }>();
   for (const row of rows) {
+    // Skip components the auditor marked Not Applicable.
+    if (notApplicable.has(row.componentNumber)) continue;
     // Skip gate / open-text / choice questions — they don't score.
     if (!SCORED_ANSWER_TYPES.has(row.answerType ?? 'yes_partial_no_na')) continue;
 

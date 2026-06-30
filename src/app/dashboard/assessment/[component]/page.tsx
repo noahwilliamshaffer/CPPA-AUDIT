@@ -14,6 +14,7 @@ import { AUDIT_COMPONENTS } from '@/lib/components';
 import ComponentQuestions from './ComponentQuestions';
 import EvidenceLocker from './EvidenceLocker';
 import AuditorLogs from './AuditorLogs';
+import ComponentStatusControl from './ComponentStatusControl';
 
 interface PageProps {
   params: Promise<{ component: string }>;
@@ -195,6 +196,11 @@ export default async function ComponentPage({ params }: PageProps) {
             Go to Eligibility Screener →
           </Link>
         </div>
+      )}
+
+      {/* Applicability + Mark Complete (§7123(c)) */}
+      {data && !data.gated && data.assessmentId && (
+        <ComponentStatusControl componentNumber={componentNumber} />
       )}
 
       {/* Questions */}

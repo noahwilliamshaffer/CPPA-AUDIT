@@ -94,6 +94,7 @@ export const componentApplicability = sqliteTable(
     assessmentId: text('assessment_id').notNull().references(() => assessments.id, { onDelete: 'cascade' }),
     componentNumber: integer('component_number').notNull(),
     applicable: integer('applicable', { mode: 'boolean' }).notNull(),
+    completed: integer('completed', { mode: 'boolean' }).notNull().default(false),
     auditorId: text('auditor_id').notNull(),
     markedAt: integer('marked_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   },
