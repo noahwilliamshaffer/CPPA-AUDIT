@@ -24,6 +24,7 @@ export default function BrandingForm() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load().catch(() => setError('Could not load branding.'));
   }, []);
 

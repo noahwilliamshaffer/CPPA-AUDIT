@@ -19,7 +19,6 @@ const DB_PATH =
 
 // Singleton — one connection shared across all server-side requests.
 declare global {
-  // eslint-disable-next-line no-var
   var __sqliteDb: Database.Database | undefined;
 }
 

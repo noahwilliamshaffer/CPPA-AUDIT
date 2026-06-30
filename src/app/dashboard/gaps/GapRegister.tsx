@@ -46,7 +46,10 @@ export default function GapRegister() {
       setLoading(false);
     }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, []);
 
   async function regenerate() {
     setBusy(true);
