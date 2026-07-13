@@ -25,8 +25,10 @@ import {
   Info,
   Mail,
   BadgeCheck,
+  DatabaseBackup,
 } from 'lucide-react';
 import BrandingForm from './BrandingForm';
+import BackupRestore from './BackupRestore';
 
 // ---------------------------------------------------------------------------
 // Fetch org details for the current user
@@ -204,7 +206,24 @@ export default async function SettingsPage() {
         </section>
 
         {/* ---------------------------------------------------------------- */}
-        {/* Section 2: White-Label Branding                                  */}
+        {/* Section 2: Data Backup                                           */}
+        {/* ---------------------------------------------------------------- */}
+        <section aria-labelledby="backup-heading">
+          <div className="mb-3 flex items-center gap-2">
+            <DatabaseBackup size={15} className="text-teal-400" aria-hidden="true" />
+            <h2
+              id="backup-heading"
+              className="font-sora text-sm font-semibold text-slate-300 uppercase tracking-wider"
+            >
+              Data Backup
+            </h2>
+          </div>
+
+          <BackupRestore />
+        </section>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Section 3: White-Label Branding                                  */}
         {/* ---------------------------------------------------------------- */}
         <section aria-labelledby="branding-heading">
           <div className="mb-3 flex items-center gap-2">
@@ -221,7 +240,7 @@ export default async function SettingsPage() {
         </section>
 
         {/* ---------------------------------------------------------------- */}
-        {/* Section 3: Billing                                               */}
+        {/* Section 4: Billing                                               */}
         {/* ---------------------------------------------------------------- */}
         <section aria-labelledby="billing-heading">
           <div className="mb-3 flex items-center gap-2">
